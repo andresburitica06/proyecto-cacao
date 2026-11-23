@@ -1,3 +1,8 @@
+/**
+ * Barra de navegación principal del sistema.
+ * Muestra la identidad visual, el usuario activo, el botón de cierre de sesión,
+ * indicadores rápidos de inventario y caja, y las pestañas de cada módulo.
+ */
 import React from 'react';
 import { Home, Sprout, ShoppingBag, PackageCheck, Wallet, UserCheck, ShieldCheck, LogOut, User, Database } from 'lucide-react';
 import { voiceAssistant } from '../services/voiceAssistant';
@@ -5,6 +10,7 @@ import { ActiveTab, Usuario } from '../types';
 
 export type { ActiveTab };
 
+// Propiedades recibidas desde App para controlar la pestaña activa y mostrar métricas globales
 interface NavbarProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
@@ -24,11 +30,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin = false,
   onLogout
 }) => {
+  // Cambia la pestaña activa y anuncia el cambio mediante el asistente de voz
   const handleTabClick = (tab: ActiveTab, label: string) => {
     setActiveTab(tab);
     voiceAssistant.speak(`Abriendo pestaña: ${label}`, false);
   };
 
+  // Formatea montos numéricos a pesos colombianos (COP) sin decimales
   const formatCOP = (monto: number) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -37,6 +45,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }).format(monto);
   };
 
+  // Definición de pestañas disponibles; los módulos de Clientes y Base de datos solo se muestran a administradores
   const navItems = [
     {
       id: 'dashboard' as ActiveTab,
@@ -98,11 +107,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="bg-gradient-to-b from-stone-900 to-amber-950 text-amber-50 shadow-xl border-b-8 border-amber-800">
       
-      {/* Top Rural Header Branding */}
+      {/* Encabezado superior con marca del sistema */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           
-          {/* Logo & Title */}
+          {/* Logotipo y título principal */}
           <div className="flex items-center gap-3 text-center md:text-left">
             <div className="p-3 bg-amber-600 rounded-2xl border-4 border-amber-400 shadow-lg text-stone-950 flex items-center justify-center">
               <span className="text-3xl sm:text-4xl">🍫</span>
@@ -125,10 +134,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Quick Metrics & User Bar in Header */}
+          {/* Métricas rápidas y barra de usuario en el encabezado */}
           <div className="flex flex-wrap items-center justify-center md:justify-end gap-3">
             
-            {/* Bloque del Usuario Activo e Información de Finca */}
+            {/* Bloque del usuario activo e información de finca */}
             <div className="flex items-center gap-2.5 bg-amber-950/90 border-2 border-amber-700/80 px-3.5 py-2 rounded-2xl text-xs sm:text-sm text-amber-100 font-bold shadow">
               <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 font-black flex items-center justify-center text-lg border-2 border-amber-300 shrink-0 shadow-sm">
                 👨‍🌾
@@ -165,6 +174,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {/* Resumen rápido de inventario total y saldo de caja del día */}
             <div className="flex items-center gap-3 bg-amber-950/90 border-2 border-amber-700/80 p-2.5 rounded-2xl text-xs sm:text-sm">
               <div className="px-3 py-1.5 rounded-xl bg-amber-900/80 border border-amber-600 text-center">
                 <p className="text-amber-300 text-[11px] font-bold uppercase">Inventario Total</p>
@@ -182,7 +192,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Main Module Tabs (Giant, clear buttons) */}
+      {/* Pestañas principales de navegación entre módulos */}
       <nav className="bg-stone-950/80 border-t border-amber-800/60 px-2 py-3 overflow-x-auto">
         <div className="max-w-7xl mx-auto flex items-center justify-start md:justify-between gap-2 min-w-max px-2">
           {navItems.map((item) => {

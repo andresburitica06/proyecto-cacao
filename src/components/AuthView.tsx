@@ -1,3 +1,8 @@
+/**
+ * Vista de autenticación del sistema (inicio de sesión y registro de productores).
+ * Valida credenciales contra la API, anuncia mensajes con el asistente de voz
+ * y notifica al componente padre cuando el acceso o registro es exitoso.
+ */
 import React, { useState } from 'react';
 import {
   ArrowRight,
@@ -17,6 +22,7 @@ import { voiceAssistant } from '../services/voiceAssistant';
 import { Usuario } from '../types';
 import { loginWithApi, registerWithApi } from '../services/api';
 
+// Propiedades de sesión actual y callbacks de autenticación
 interface AuthViewProps {
   currentUser: Usuario | null;
   onLoginSuccess: (user: Usuario, token: string) => void;
@@ -30,13 +36,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
   onRegisterSuccess,
   onLogout
 }) => {
+  // Modo activo de la pantalla ('login' para ingreso, 'register' para crear cuenta)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+
+  // Estados del formulario de inicio de sesión
   const [loginCedula, setLoginCedula] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
+  // Estados del formulario de registro de nuevo productor
   const [regNombre, setRegNombre] = useState('');
   const [regCedula, setRegCedula] = useState('');
   const [regCelular, setRegCelular] = useState('');
@@ -46,8 +56,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [regError, setRegError] = useState('');
   const [regLoading, setRegLoading] = useState(false);
 
+  // Reproduce un mensaje de ayuda en voz alta de forma inmediata
   const handleSpeak = (text: string) => voiceAssistant.speak(text, true);
 
+  // Valida los campos de ingreso, autentica contra la API y construye el objeto Usuario
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -65,6 +77,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setLoginLoading(true);
     try {
       const response = await loginWithApi(loginCedula.trim(), loginPassword);
+      // Normaliza los datos devueltos por la API al modelo Usuario del frontend
       const user: Usuario = {
         id: String(response.user.id),
         nombreCompleto: response.user.nombreCompleto,
@@ -91,6 +104,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
+  // Valida los datos del registro, crea la cuenta y su finca inicial en la API
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
@@ -134,6 +148,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto py-2 space-y-6 animate-fadeIn">
+      {/* Encabezado de bienvenida con botón de ayuda por voz */}
       <div className="bg-stone-950 text-amber-50 rounded-3xl p-6 border-4 border-amber-800 shadow-xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div>
@@ -170,6 +185,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         </div>
       </div>
 
+      {/* Aviso de sesión activa en caso de que exista un usuario autenticado */}
       {currentUser && (
         <div className="bg-amber-100 border-2 border-amber-600 p-4 rounded-2xl text-amber-950 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -194,6 +210,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         </div>
       )}
 
+      {/* Selector de pestañas entre inicio de sesión y registro */}
       <div className="flex flex-col sm:flex-row gap-3 bg-stone-100 p-2 rounded-2xl border border-stone-300">
         <button
           type="button"
@@ -222,8 +239,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
         </button>
       </div>
 
+      {/* Contenedor principal con el formulario activo y la guía lateral de uso */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 bg-white rounded-3xl border-4 border-amber-800/30 p-6 sm:p-8 shadow-xl">
+          {/* Formulario de inicio de sesión */}
           {authMode === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-6">
               <div className="border-b border-stone-200 pb-4">
@@ -294,6 +313,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             </form>
           )}
 
+          {/* Formulario de registro de nuevo productor */}
           {authMode === 'register' && (
             <form onSubmit={handleRegisterSubmit} className="space-y-5">
               <div className="border-b border-stone-200 pb-4">
@@ -388,6 +408,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           )}
         </div>
 
+        {/* Panel lateral con recomendaciones básicas para el productor */}
         <div className="lg:col-span-5 bg-white border-2 border-stone-200 rounded-3xl p-6 shadow-sm">
           <h4 className="font-black text-xl text-stone-900 mb-3">Cómo usarlo</h4>
           <ul className="space-y-3 text-sm text-stone-700">

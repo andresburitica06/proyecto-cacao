@@ -1,3 +1,8 @@
+/**
+ * Vista principal del panel de control (Dashboard).
+ * Muestra métricas clave (inventario, fincas y caja), accesos rápidos a acciones frecuentes,
+ * últimas recolecciones, movimientos recientes de caja y un resumen histórico mensual.
+ */
 import React from 'react';
 import {
   ShoppingBag,
@@ -14,6 +19,7 @@ import { Finca, ProductoInventario, MovimientoCaja, Recoleccion, Venta } from '.
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { ActiveTab } from './Navbar';
 
+/** Propiedades que recibe la vista principal del dashboard */
 interface DashboardViewProps {
   fincas: Finca[];
   inventario: ProductoInventario[];
@@ -39,6 +45,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickSaleModal,
   onOpenQuickExpenseModal
 }) => {
+  // Cálculo de totales generales para las tarjetas de resumen (KPIs)
   const kilosSecoPremium = inventario
     .filter((i) => i.tipoProducto === 'cacao_seco_premium')
     .reduce((acc, curr) => acc + curr.cantidadKg, 0);
@@ -48,9 +55,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const egresosTotal = caja.filter((m) => m.tipo === 'egreso').reduce((acc, curr) => acc + curr.monto, 0);
   const saldoCaja = ingresosTotal - egresosTotal;
 
+  // Agrupación de kilos baba, ventas y gastos por año y mes
   const monthFormatter = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' });
   const monthlyMap = new Map<string, { kilosBaba: number; ventas: number; gastos: number }>();
 
+  // Acumula un valor numérico en la entrada correspondiente al mes de la fecha indicada
   const addMonthlyValue = (dateStr: string, key: 'kilosBaba' | 'ventas' | 'gastos', value: number) => {
     const date = new Date(dateStr);
     if (Number.isNaN(date.getTime())) return;
@@ -66,6 +75,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .filter((mov) => mov.tipo === 'egreso')
     .forEach((mov) => addMonthlyValue(mov.fecha, 'gastos', mov.monto));
 
+  // Convierte el mapa mensual en una lista ordenada del mes más reciente al más antiguo
   const monthlySummary = Array.from(monthlyMap.entries())
     .map(([key, value]) => {
       const [year, month] = key.split('-').map(Number);
@@ -77,6 +87,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     })
     .sort((a, b) => b.key.localeCompare(a.key));
 
+  // Formatea montos monetarios en pesos colombianos (COP) sin decimales
   const formatCOP = (monto: number) =>
     new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -84,8 +95,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       maximumFractionDigits: 0
     }).format(monto);
 
+  // Texto narrado por el asistente de voz con el resumen general
   const summaryText = `Tienes ${fincas.length} fincas, ${totalKilosInventario} kilos en inventario, ${kilosBaba} kilos de baba registrados y un saldo de caja de ${saldoCaja} pesos.`;
 
+  // Configuración de las tarjetas de indicadores clave (KPIs)
   const kpiCards = [
     {
       title: 'Inventario total',
@@ -110,6 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   ] as const;
 
+  // Configuración de los cuatro botones de acciones rápidas del panel
   const actionCards = [
     {
       title: 'Registrar cosecha',
@@ -143,6 +157,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12 animate-fadeIn">
+      {/* Encabezado principal del dashboard con resumen de voz */}
       <div className="bg-stone-950 text-amber-50 rounded-3xl p-6 sm:p-7 border-4 border-amber-800 shadow-xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="space-y-2">
@@ -166,6 +181,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Tarjetas de indicadores clave (Inventario, Fincas y Caja) */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {kpiCards.map((card) => {
           const Icon = card.icon;
@@ -193,6 +209,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         })}
       </section>
 
+      {/* Sección de accesos rápidos para cosecha, historial, ventas y caja */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xl sm:text-2xl font-black text-stone-900">Acciones rápidas</h3>
@@ -235,7 +252,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </section>
 
+      {/* Listados recientes: últimas recolecciones y movimientos de caja */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Tarjeta de últimas recolecciones */}
         <div className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg sm:text-xl font-black text-stone-900 flex items-center gap-2">
@@ -273,6 +292,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
+        {/* Tarjeta de movimientos recientes de caja */}
         <div className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg sm:text-xl font-black text-stone-900 flex items-center gap-2">
@@ -312,6 +332,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </section>
 
+      {/* Tabla de historial y balance mensual */}
       <section className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
           <div>

@@ -1,9 +1,15 @@
+/**
+ * Vista de gestión de Inventario y Bodega de cacao.
+ * Permite consultar el stock disponible en kilos y sacos, filtrar por finca,
+ * estimar el valor comercial, ingresar nuevos lotes y ajustar existencias.
+ */
 import React, { useState } from 'react';
 import { PackageCheck, Scale, Warehouse, PlusCircle, Edit, ArrowUpDown, Filter, Sparkles, Check } from 'lucide-react';
 import { Finca, ProductoInventario, TipoProductoCacao } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 
+/** Propiedades que recibe la vista de inventario */
 interface InventarioViewProps {
   fincas: Finca[];
   inventario: ProductoInventario[];
@@ -19,11 +25,12 @@ export const InventarioView: React.FC<InventarioViewProps> = ({
   onUpdateProductoInventario,
   onAddProductoInventario
 }) => {
+  // Estados de filtro por finca y edición rápida de existencias
   const [selectedFincaFilter, setSelectedFincaFilter] = useState<string>('todas');
   const [editingItem, setEditingItem] = useState<ProductoInventario | null>(null);
   const [newCantidad, setNewCantidad] = useState<string>('0');
 
-  // Modal para agregar nuevo producto en inventario
+  // Estados del modal para agregar un nuevo producto en inventario
   const [showAddModal, setShowAddModal] = useState(false);
   const [fincaIdAdd, setFincaIdAdd] = useState(fincas[0]?.id || '');
   const [tipoProdAdd, setTipoProdAdd] = useState<TipoProductoCacao>('cacao_seco_premium');
@@ -32,14 +39,17 @@ export const InventarioView: React.FC<InventarioViewProps> = ({
   const [precioRefAdd, setPrecioRefAdd] = useState('22500');
   const [bodegaAdd, setBodegaAdd] = useState('Bodega Principal');
 
+  // Filtra los productos del inventario según la finca seleccionada
   const filteredInventario = selectedFincaFilter === 'todas'
     ? inventario
     : inventario.filter(i => i.fincaId === selectedFincaFilter);
 
+  // Totales agregados de kilos, sacos equivalentes y valor comercial estimado
   const totalKilos = filteredInventario.reduce((acc, curr) => acc + curr.cantidadKg, 0);
   const totalSacos = Math.round((totalKilos / 50) * 10) / 10; // 1 saco = 50 kg
   const valorTotalEstimado = filteredInventario.reduce((acc, curr) => acc + (curr.cantidadKg * curr.precioRefKg), 0);
 
+  // Formatea valores numéricos a pesos colombianos (COP) sin decimales
   const formatCOP = (monto: number) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -48,6 +58,7 @@ export const InventarioView: React.FC<InventarioViewProps> = ({
     }).format(monto);
   };
 
+  // Valida y guarda los ajustes realizados sobre un producto en bodega
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
@@ -65,6 +76,7 @@ export const InventarioView: React.FC<InventarioViewProps> = ({
     setEditingItem(null);
   };
 
+  // Valida y registra un nuevo lote de producto en el inventario
   const handleCreateProducto = (e: React.FormEvent) => {
     e.preventDefault();
     if (!fincaIdAdd || !nombreProdAdd.trim() || !bodegaAdd.trim() || parseFloat(cantidadAdd) < 0 || parseFloat(precioRefAdd) < 0) return;
@@ -80,6 +92,7 @@ export const InventarioView: React.FC<InventarioViewProps> = ({
     setShowAddModal(false);
   };
 
+  // Estilos y etiquetas visuales por tipo de producto de cacao
   const tipoBadges: Record<TipoProductoCacao, { label: string; bg: string; border: string; text: string; icon: string }> = {
     cacao_seco_premium: { label: 'Cacao Seco Premium Exportación', bg: 'bg-amber-100', border: 'border-amber-500', text: 'text-amber-950', icon: '📦' },
     cacao_seco_corriente: { label: 'Cacao Seco Corriente / Pasilla', bg: 'bg-yellow-100', border: 'border-yellow-500', text: 'text-yellow-950', icon: '🌾' },
@@ -87,6 +100,7 @@ export const InventarioView: React.FC<InventarioViewProps> = ({
     cacao_baba: { label: 'Cacao en Baba Fresco', bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-950', icon: '🍃' }
   };
 
+  // Texto de resumen narrado por el asistente de voz
   const inventorySummaryAudio = `Módulo de inventario y bodega. Tienes un total de ${totalKilos} kilos de cacao almacenados en bodega, lo que equivale a aproximadamente ${totalSacos} sacos de 50 kilos. Valor total estimado: ${valorTotalEstimado} pesos.`;
 
   return (

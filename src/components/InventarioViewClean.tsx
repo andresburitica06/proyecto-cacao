@@ -1,3 +1,8 @@
+/**
+ * Vista depurada de Inventario, Bodega e Historial de Cacao.
+ * Integra el control de stock en bodega, una calculadora de valor basada en cosechas
+ * finalizadas con precio por kilo editable y el componente de historial de recolecciones.
+ */
 import React, { useMemo, useState } from 'react';
 import { Edit, Filter, PackageCheck, PlusCircle, Scale, Sparkles } from 'lucide-react';
 import { Finca, ProductoInventario, Recoleccion, TipoProductoCacao, ZonaCultivo } from '../types';
@@ -5,6 +10,7 @@ import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 import { RecoleccionesHistory } from './RecoleccionesHistory';
 
+/** Propiedades que recibe la vista de inventario e historial */
 interface InventarioViewProps {
   fincas: Finca[];
   zonas: ZonaCultivo[];
@@ -26,6 +32,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
   onUpdateProductoInventario,
   onAddProductoInventario
 }) => {
+  // Estados de filtro, edición de inventario, modal de ingreso y calculadora de precio
   const [selectedFincaFilter, setSelectedFincaFilter] = useState<string>('todas');
   const [editingItem, setEditingItem] = useState<ProductoInventario | null>(null);
   const [newCantidad, setNewCantidad] = useState<string>('0');
@@ -39,16 +46,19 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
   const [precioCalculadora, setPrecioCalculadora] = useState('0');
   const [selectedFinalizadoId, setSelectedFinalizadoId] = useState('');
 
+  // Filtra el inventario según la finca seleccionada
   const filteredInventario = selectedFincaFilter === 'todas'
     ? inventario
     : inventario.filter((item) => item.fincaId === selectedFincaFilter);
 
+  // Recolecciones memorizadas cuyo proceso ya finalizó (cacao seco listo)
   const precioCalculadoraNum = Number(precioCalculadora) || 0;
   const finalizedHistory = useMemo(
     () => recolecciones.filter((rec) => rec.estadoProceso === 'seco_listo'),
     [recolecciones]
   );
 
+  // Cálculo de kilos base y valor estimado para la calculadora de cosecha finalizada
   const selectedFinalizado = finalizedHistory.find((rec) => rec.id === selectedFinalizadoId) || null;
   const totalKilos = finalizedHistory.reduce(
     (acc, rec) => acc + (rec.kilosSecoObtenidos || rec.rendimientoEstimadoSeco || 0),
@@ -59,6 +69,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
     : totalKilos;
   const valorCalculado = kilosBaseCalculadora * precioCalculadoraNum;
 
+  // Mantiene sincronizada la cosecha finalizada seleccionada cuando cambia el historial
   React.useEffect(() => {
     if (!selectedFinalizadoId && finalizedHistory.length > 0) {
       setSelectedFinalizadoId(finalizedHistory[0].id);
@@ -68,6 +79,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
     }
   }, [finalizedHistory, selectedFinalizadoId]);
 
+  // Formatea montos en pesos colombianos (COP) sin decimales
   const formatCOP = (monto: number) =>
     new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -75,6 +87,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
       maximumFractionDigits: 0
     }).format(monto);
 
+  // Valida y guarda los cambios de un producto editado en bodega
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
@@ -95,6 +108,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
     setEditingItem(null);
   };
 
+  // Valida y agrega un nuevo lote de producto al inventario de bodega
   const handleCreateProducto = (e: React.FormEvent) => {
     e.preventDefault();
     if (!fincaIdAdd || !nombreProdAdd.trim() || !bodegaAdd.trim() || parseFloat(cantidadAdd) < 0 || parseFloat(precioRefAdd) < 0) return;
@@ -112,6 +126,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
     setShowAddModal(false);
   };
 
+  // Estilos y etiquetas visuales según el tipo de cacao
   const tipoBadges: Record<TipoProductoCacao, { label: string; bg: string; border: string; text: string; icon: string }> = {
     cacao_seco_premium: { label: 'Cacao Seco Premium Exportacion', bg: 'bg-amber-100', border: 'border-amber-500', text: 'text-amber-950', icon: '📦' },
     cacao_seco_corriente: { label: 'Cacao Seco Corriente / Pasilla', bg: 'bg-yellow-100', border: 'border-yellow-500', text: 'text-yellow-950', icon: '🌾' },
@@ -119,10 +134,12 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
     cacao_baba: { label: 'Cacao en Baba Fresco', bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-950', icon: '🍃' }
   };
 
+  // Texto narrado por el asistente de voz con el resumen del módulo
   const inventorySummaryAudio = `Modulo de inventario y bodega. Tienes un total de ${totalKilos} kilos de cacao almacenados. Puedes elegir un historial finalizado y multiplicarlo por el precio por kilo que escribas para calcular su valor.`;
 
   return (
     <div className="space-y-8 pb-12 animate-fadeIn">
+      {/* Encabezado principal de inventario e historial */}
       <div className="bg-gradient-to-r from-yellow-900 via-amber-900 to-yellow-950 border-4 border-yellow-600 text-white p-6 rounded-3xl shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -151,6 +168,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
         </div>
       </div>
 
+      {/* Tarjetas de métricas totales y calculadora de valor por cosecha finalizada */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-amber-50 border-4 border-amber-600 p-6 rounded-3xl shadow-md flex items-center justify-between">
           <div>
@@ -223,6 +241,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
         </div>
       </div>
 
+      {/* Selector de filtro por finca */}
       <div className="flex items-center justify-between bg-white border-3 border-stone-300 p-4 rounded-2xl">
         <div className="flex items-center gap-2">
           <Filter className="w-5 h-5 text-amber-800" />
@@ -240,6 +259,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
         </select>
       </div>
 
+      {/* Cuadrícula de tarjetas de productos almacenados en bodega */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {filteredInventario.map((prod) => {
           const finca = fincas.find((f) => f.id === prod.fincaId);
@@ -300,6 +320,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
         })}
       </div>
 
+      {/* Historial detallado de recolecciones y su estado de proceso */}
       <RecoleccionesHistory
         fincas={fincas}
         zonas={zonas}
@@ -307,6 +328,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
         onUpdateRecoleccion={onUpdateRecoleccion}
       />
 
+      {/* Modal para ajustar los kilos y datos de un producto en bodega */}
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-4 border-yellow-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
@@ -351,6 +373,7 @@ export const InventarioViewClean: React.FC<InventarioViewProps> = ({
         </div>
       )}
 
+      {/* Modal para ingresar un nuevo lote de cacao a la bodega */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-4 border-yellow-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">

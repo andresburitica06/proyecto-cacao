@@ -1,3 +1,8 @@
+/**
+ * Panel administrativo de gestión de productores registrados.
+ * Permite buscar y filtrar productores, consultar indicadores consolidados por finca
+ * y restablecer contraseñas de acceso.
+ */
 import React, { useMemo, useState } from 'react';
 import {
   Users,
@@ -15,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Usuario, Finca, ProductoInventario, Recoleccion, MovimientoCaja } from '../types';
 
+// Propiedades con los datos globales del sistema y el callback para restablecer contraseñas
 interface AdminClientsViewProps {
   users: Usuario[];
   fincas: Finca[];
@@ -32,11 +38,14 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
   caja,
   onResetPassword
 }) => {
+  // Estados para búsqueda libre y filtro por asignación de finca
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'con-finca' | 'sin-finca'>('todos');
 
+  // Excluye cuentas administradoras para listar únicamente a los productores
   const productores = useMemo(() => users.filter((user) => user.rol !== 'admin'), [users]);
 
+  // Formatea valores monetarios en pesos colombianos (COP)
   const formatCOP = (value: number) =>
     new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -44,11 +53,13 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
       maximumFractionDigits: 0
     }).format(value);
 
+  // Indicadores globales mostrados en el encabezado y tarjetas de resumen
   const totalKilosInventario = inventario.reduce((sum, item) => sum + item.cantidadKg, 0);
   const totalCosechas = recolecciones.length;
   const totalCaja = caja.reduce((sum, item) => sum + (item.tipo === 'ingreso' ? item.monto : -item.monto), 0);
   const productoresConFinca = productores.filter((user) => Boolean(user.fincaId)).length;
 
+  // Aplica la búsqueda por texto y el filtro de finca asignada sobre la lista de productores
   const productoresFiltrados = productores.filter((user) => {
     const finca = fincas.find((item) => item.id === user.fincaId);
     const texto = `${user.nombreCompleto} ${user.cedula} ${user.celularWhatsApp} ${user.nombreFincaVereda} ${finca?.nombre || ''}`.toLowerCase();
@@ -63,6 +74,7 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      {/* Encabezado del panel administrativo con métricas globales */}
       <div className="bg-stone-950 text-amber-50 rounded-3xl p-6 sm:p-7 border-4 border-amber-800 shadow-xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="space-y-2">
@@ -99,6 +111,7 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
         </div>
       </div>
 
+      {/* Barra de búsqueda, filtro rápido y resumen de inventario total */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-3xl p-4 border-2 border-stone-200 shadow-sm">
           <p className="text-xs font-black uppercase tracking-wider text-stone-500 flex items-center gap-2">
@@ -143,6 +156,7 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
         </div>
       </div>
 
+      {/* Listado de tarjetas por productor o mensaje vacío si no hay coincidencias */}
       {productoresFiltrados.length === 0 ? (
         <div className="bg-white rounded-2xl p-6 border-2 border-stone-200 font-bold text-stone-600">
           No hay productores que coincidan con el filtro.
@@ -150,6 +164,7 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {productoresFiltrados.map((user) => {
+            // Calcula métricas individuales del productor a partir de su finca, cosechas y caja
             const finca = fincas.find((item) => item.id === user.fincaId);
             const fincaId = user.fincaId;
             const kilos = inventario.filter((item) => item.fincaId === fincaId).reduce((sum, item) => sum + item.cantidadKg, 0);
@@ -163,6 +178,7 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
 
             return (
               <article key={user.id} className="bg-white rounded-3xl p-5 border-3 border-amber-200 shadow-sm space-y-4">
+                {/* Datos personales y rol del productor */}
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-xl font-black text-stone-900">{user.nombreCompleto}</h3>
@@ -215,6 +231,7 @@ export const AdminClientsView: React.FC<AdminClientsViewProps> = ({
                   </div>
                 </div>
 
+                {/* Botón administrativo para restablecer la contraseña del productor */}
                 <button
                   type="button"
                   onClick={() => {

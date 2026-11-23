@@ -1,5 +1,10 @@
+/*
+ * Hoja de estilos global de la aplicación.
+ * Importa Tailwind CSS, define los estilos base del documento y declara animaciones utilitarias.
+ */
 @import "tailwindcss";
 
+/* Estilos base aplicados al cuerpo del documento (colores cálidos, tipografía del sistema y suavizado de fuentes) */
 @layer base {
   body {
     background-color: #fcf9f2;
@@ -9,6 +14,7 @@
   }
 }
 
+/* Animación de entrada con desvanecimiento y desplazamiento vertical suave */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -20,6 +26,7 @@
   }
 }
 
+/* Animación de entrada con desvanecimiento y ligero aumento de escala */
 @keyframes scaleUp {
   from {
     opacity: 0;
@@ -31,10 +38,12 @@
   }
 }
 
+/* Clase utilitaria para aplicar la animación fadeIn */
 .animate-fadeIn {
   animation: fadeIn 0.25s ease-out forwards;
 }
 
+/* Clase utilitaria para aplicar la animación scaleUp */
 .animate-scaleUp {
   animation: scaleUp 0.2s ease-out forwards;
 }

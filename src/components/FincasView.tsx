@@ -1,9 +1,15 @@
-﻿import React, { useState } from 'react';
+﻿/**
+ * Vista de gestión de Fincas y Lotes de Cultivo.
+ * Permite consultar, crear, editar y eliminar fincas cacaoteras, así como administrar
+ * los lotes (zonas de cultivo) asociados a cada finca con soporte de lectura por voz.
+ */
+import React, { useState } from 'react';
 import { Sprout, Plus, MapPin, User, Trees, Layers, X, Check, Edit, Trash2 } from 'lucide-react';
 import { Finca, ZonaCultivo } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 
+// Catálogo de municipios disponibles en Santander para el registro de fincas
 const MUNICIPIOS_SANTANDER = [
   'Bucaramanga',
   'Floridablanca',
@@ -22,6 +28,7 @@ const MUNICIPIOS_SANTANDER = [
   'Málaga'
 ] as const;
 
+// Mapa de veredas disponibles agrupadas por municipio
 const VEREDAS_POR_MUNICIPIO: Record<string, string[]> = {
   Bucaramanga: ['La Malaña', 'Vijagual', 'El Pedregal', 'San Cayetano'],
   Floridablanca: ['Vericute', 'Ruitoque', 'Helechales', 'Casiano'],
@@ -40,6 +47,7 @@ const VEREDAS_POR_MUNICIPIO: Record<string, string[]> = {
   Málaga: ['Calichal', 'Pantano Grande', 'Pescadero', 'El Término']
 };
 
+/** Propiedades que recibe la vista de fincas y lotes */
 interface FincasViewProps {
   fincas: Finca[];
   zonas: ZonaCultivo[];
@@ -61,6 +69,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
   onDeleteFinca,
   onDeleteZona
 }) => {
+  // Estados de control de modales, vista previa y despliegue de lotes por finca
   const [showAddFincaModal, setShowAddFincaModal] = useState(false);
   const [editingFinca, setEditingFinca] = useState<Finca | null>(null);
   const [hectareasEditTotal, setHectareasEditTotal] = useState('');
@@ -69,6 +78,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
   const [previewFinca, setPreviewFinca] = useState<Finca | null>(null);
   const [expandedZones, setExpandedZones] = useState<Record<string, boolean>>({});
 
+  // Estados del formulario para registrar una nueva finca
   const [nombre, setNombre] = useState('');
   const [propietario, setPropietario] = useState('');
   const [vereda, setVereda] = useState('');
@@ -76,13 +86,16 @@ export const FincasView: React.FC<FincasViewProps> = ({
   const [hectareasTotal, setHectareasTotal] = useState('5');
   const [hectareasCacao, setHectareasCacao] = useState('3.5');
 
+  // Lista de veredas filtrada según el municipio seleccionado
   const veredasDisponibles = VEREDAS_POR_MUNICIPIO[municipio] || [];
 
+  // Estados del formulario para agregar un nuevo lote de cultivo
   const [nombreZona, setNombreZona] = useState('');
   const [variedadCacao, setVariedadCacao] = useState('CCN-51');
   const [arbolesEstimados, setArbolesEstimados] = useState('1000');
   const [hectareasZona, setHectareasZona] = useState('2.0');
 
+  // Valida y guarda una nueva finca, anunciando el resultado por voz
   const handleCreateFinca = async (e: React.FormEvent) => {
     e.preventDefault();
     // Validación rigurosa de todos los campos
@@ -149,6 +162,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
     setHectareasCacao('3.5');
   };
 
+  // Crea un nuevo lote de cultivo asociado a la finca indicada y despliega su lista
   const handleCreateZona = (e: React.FormEvent, fincaId: string) => {
     e.preventDefault();
     if (!nombreZona.trim()) return;
@@ -167,6 +181,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
     setNombreZona('');
   };
 
+  // Valida y guarda los cambios realizados en la finca en edición
   const handleUpdateFinca = (e: React.FormEvent) => {
     e.preventDefault();
     const hectareasTotalEditadas = Number(hectareasEditTotal);
@@ -204,6 +219,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12 animate-fadeIn">
+      {/* Encabezado del módulo de fincas y lotes */}
       <div className="bg-emerald-900 border-4 border-emerald-600 text-white p-6 rounded-3xl shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -229,6 +245,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
         </div>
       </div>
 
+      {/* Cuadrícula de tarjetas con las fincas registradas */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {fincas.map((finca) => {
           const zonasFinca = zonas.filter((z) => z.fincaId === finca.id);
@@ -394,6 +411,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
         })}
       </div>
 
+      {/* Botón principal para abrir el modal de registro de nueva finca */}
       <div className="flex justify-center pt-2">
         <button
           type="button"
@@ -405,6 +423,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
         </button>
       </div>
 
+      {/* Modal de vista previa de una finca */}
       {previewFinca && (
         <div className="fixed inset-0 z-50 bg-stone-950/80 flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-white border-4 border-emerald-800/80 rounded-3xl p-6 shadow-2xl max-w-lg w-full">
@@ -489,6 +508,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
         </div>
       )}
 
+      {/* Modal para editar los datos de una finca existente */}
       {editingFinca && (
         <div className="fixed inset-0 z-50 bg-stone-950/80 flex items-center justify-center p-4">
           <div className="bg-white border-4 border-emerald-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl">
@@ -594,6 +614,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
         </div>
       )}
 
+      {/* Modal para registrar una nueva finca */}
       {showAddFincaModal && (
         <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4 pointer-events-auto">
           <div className="relative z-10 bg-white border-4 border-emerald-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-scaleUp">
@@ -717,6 +738,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
         </div>
       )}
 
+      {/* Modal para agregar un nuevo lote de cultivo a la finca seleccionada */}
       {showAddZonaModal && (
         <div className="fixed inset-0 z-[60] bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4 pointer-events-auto">
           <div className="relative z-10 bg-white border-4 border-emerald-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">

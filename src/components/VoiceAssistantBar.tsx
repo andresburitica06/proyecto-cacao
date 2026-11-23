@@ -1,7 +1,13 @@
+/**
+ * Barra superior fija del asistente de voz.
+ * Permite leer el contenido de la pantalla actual, pausar la lectura,
+ * cambiar la velocidad de voz, silenciar el audio y desplegar instrucciones de uso.
+ */
 import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Play, Square, FastForward, Info } from 'lucide-react';
 import { voiceAssistant } from '../services/voiceAssistant';
 
+// Propiedades que indican el título y el texto descriptivo de la pantalla activa
 interface VoiceAssistantBarProps {
   currentScreenTitle: string;
   screenTextToRead: string;
@@ -11,12 +17,14 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
   currentScreenTitle,
   screenTextToRead
 }) => {
+  // Estados de reproducción, texto en curso, silencio, velocidad y panel informativo
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentText, setCurrentText] = useState('');
   const [isMuted, setIsMuted] = useState(voiceAssistant.getMuted());
   const [speed, setSpeed] = useState(voiceAssistant.getRate());
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // Suscripción al servicio de voz para reflejar en tiempo real cuándo está hablando
   useEffect(() => {
     const unsubscribe = voiceAssistant.subscribe((speaking, text) => {
       setIsSpeaking(speaking);
@@ -25,21 +33,25 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
     return unsubscribe;
   }, []);
 
+  // Alterna el estado de silencio global del asistente de voz
   const handleToggleMute = () => {
     const nextMute = !isMuted;
     setIsMuted(nextMute);
     voiceAssistant.setMuted(nextMute);
   };
 
+  // Lee en voz alta el título y la explicación de la pantalla actual
   const handlePlayScreen = () => {
     const textToSpeak = `Estás en la pantalla: ${currentScreenTitle}. ${screenTextToRead}`;
     voiceAssistant.speak(textToSpeak, true);
   };
 
+  // Detiene inmediatamente la lectura de voz en curso
   const handleStop = () => {
     voiceAssistant.stop();
   };
 
+  // Alterna entre velocidad lenta (0.8) y velocidad normal (1.0)
   const handleChangeSpeed = () => {
     const newSpeed = speed === 0.8 ? 1.0 : 0.8;
     setSpeed(newSpeed);
@@ -51,7 +63,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           
-          {/* Asistente de Voz Label & Screen Info */}
+          {/* Botón principal para escuchar la pantalla e indicador del texto que se está leyendo */}
           <div className="flex items-center gap-3">
             <button
               onClick={handlePlayScreen}
@@ -74,10 +86,10 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
             )}
           </div>
 
-          {/* Controls: Mute, Stop, Speed */}
+          {/* Controles rápidos: velocidad, detener lectura, silenciar e información */}
           <div className="flex items-center gap-2">
             
-            {/* Speed Toggle (Lento / Normal) */}
+            {/* Cambio de velocidad de lectura (lenta / normal) */}
             <button
               type="button"
               onClick={handleChangeSpeed}
@@ -88,7 +100,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
               <span>{speed < 1.0 ? '🐢 Voz Lenta' : '⚡ Voz Normal'}</span>
             </button>
 
-            {/* Detener lectura */}
+            {/* Botón para detener la lectura cuando el asistente está hablando */}
             {isSpeaking && (
               <button
                 type="button"
@@ -101,7 +113,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
               </button>
             )}
 
-            {/* Mutear / Silenciar */}
+            {/* Botón para activar o silenciar el sonido del asistente */}
             <button
               type="button"
               onClick={handleToggleMute}
@@ -125,7 +137,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
               )}
             </button>
 
-            {/* Info modal trigger toggle */}
+            {/* Botón para desplegar u ocultar las instrucciones de ayuda */}
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
@@ -138,7 +150,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
           </div>
         </div>
 
-        {/* Helpful Info bar for farmers */}
+        {/* Panel desplegable con explicación sencilla del asistente de voz */}
         {isExpanded && (
           <div className="mt-3 p-3 bg-amber-950/90 border-2 border-amber-600 rounded-2xl text-amber-100 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
             <div className="flex items-start gap-2">

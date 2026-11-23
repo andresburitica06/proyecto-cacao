@@ -1,9 +1,15 @@
+/**
+ * Vista de ventas de cacao, caja diaria y directorio de clientes.
+ * Permite registrar ventas (con ingreso automático a caja), registrar egresos/gastos,
+ * administrar clientes compradores y generar tickets o facturas imprimibles en PDF.
+ */
 import React, { useEffect, useState } from 'react';
 import { Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, Plus, Printer, CheckCircle2, DollarSign, Calendar, Tag, ShieldCheck } from 'lucide-react';
 import { Finca, Cliente, Venta, MovimientoCaja, TipoProductoCacao, MetodoPago, CategoriaGasto, EstadoCalidad } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 
+/** Propiedades esperadas por el componente VentasCajaView. */
 interface VentasCajaViewProps {
   fincas: Finca[];
   clientes: Cliente[];
@@ -29,6 +35,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   quickOpenSaleModal = false,
   quickOpenExpenseModal = false
 }) => {
+  // Estados de navegación interna (subpestañas) y visibilidad de modales
   const [subTab, setSubTab] = useState<'ventas_caja' | 'historial_ventas' | 'clientes'>('ventas_caja');
   const [showSaleModal, setShowSaleModal] = useState(quickOpenSaleModal);
   const [showExpenseModal, setShowExpenseModal] = useState(quickOpenExpenseModal);
@@ -36,7 +43,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   const [printedVentaTicket, setPrintedVentaTicket] = useState<Venta | null>(null);
   const [invoiceVenta, setInvoiceVenta] = useState<Venta | null>(null);
 
-  // Form Venta
+  // Estados del formulario de registro de venta
   const [clienteNombreSale, setClienteNombreSale] = useState<string>(clientes[0]?.nombre || '');
   const [fincaIdSale, setFincaIdSale] = useState<string>(fincas[0]?.id || '');
   const [tipoProdSale, setTipoProdSale] = useState<TipoProductoCacao>('cacao_seco_premium');
@@ -45,40 +52,43 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   const [estadoCalidadSale, setEstadoCalidadSale] = useState<EstadoCalidad>('buen_estado');
   const [metodoPago, setMetodoPago] = useState<MetodoPago>('efectivo');
 
-  // Form Expense
+  // Estados del formulario de registro de gasto/egreso en caja
   const [conceptoGasto, setConceptoGasto] = useState<string>('Pago 2 Jornales de Recolección');
   const [montoGasto, setMontoGasto] = useState<string>('160000');
   const [categoriaGasto, setCategoriaGasto] = useState<CategoriaGasto>('pago_jornales');
   const [registradoPor, setRegistradoPor] = useState<string>('Don Jose Ignacio Gómez');
 
-  // Form Cliente
+  // Estados del formulario para agregar un nuevo cliente/comprador
   const [nombreClienteNew, setNombreClienteNew] = useState('');
   const [docClienteNew, setDocClienteNew] = useState('');
   const [telClienteNew, setTelClienteNew] = useState('');
   const [tipoClienteNew, setTipoClienteNew] = useState<'cooperativa' | 'intermediario' | 'empresa_chocolate' | 'particular'>('cooperativa');
 
+  // Abre automáticamente el modal de venta cuando se solicita desde un acceso rápido externo
   useEffect(() => {
     if (quickOpenSaleModal) {
       setShowSaleModal(true);
     }
   }, [quickOpenSaleModal]);
 
+  // Abre automáticamente el modal de gasto cuando se solicita desde un acceso rápido externo
   useEffect(() => {
     if (quickOpenExpenseModal) {
       setShowExpenseModal(true);
     }
   }, [quickOpenExpenseModal]);
 
-  // Multiplicador Venta
+  // Cálculo automático del total de la venta en pesos colombianos (COP)
   const kilosNum = parseFloat(kilosVendidos) || 0;
   const precioNum = parseFloat(precioPorKg) || 0;
   const totalVentaCOP = kilosNum * precioNum;
 
-  // Calculos de Caja
+  // Totales acumulados de la caja diaria (ingresos, egresos y saldo neto)
   const ingresosCaja = caja.filter(c => c.tipo === 'ingreso').reduce((a, b) => a + b.monto, 0);
   const egresosCaja = caja.filter(c => c.tipo === 'egreso').reduce((a, b) => a + b.monto, 0);
   const saldoNetoCaja = ingresosCaja - egresosCaja;
 
+  // Formatea un valor numérico como moneda colombiana (COP) sin decimales
   const formatCOP = (monto: number) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -87,6 +97,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     }).format(monto);
   };
 
+  // Genera una ventana emergente con el HTML de la factura lista para imprimir o guardar como PDF
   const openInvoiceWindow = (venta: Venta) => {
     const cliente = clientes.find((c) => c.id === venta.clienteId);
     const clienteFactura = cliente?.nombre || venta.clienteNombre || 'Cliente';
@@ -147,6 +158,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     win.document.close();
   };
 
+  // Valida y registra una nueva venta de cacao con comprobante generado y aviso por voz
   const handleRegisterSale = (e: React.FormEvent) => {
     e.preventDefault();
     if (kilosNum <= 0 || precioNum <= 0) return;
@@ -178,6 +190,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     setShowSaleModal(false);
   };
 
+  // Valida y registra un egreso (gasto) en la caja diaria con confirmación por voz
   const handleRegisterExpense = (e: React.FormEvent) => {
     e.preventDefault();
     const monto = parseFloat(montoGasto) || 0;
@@ -197,6 +210,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     setShowExpenseModal(false);
   };
 
+  // Crea un nuevo cliente/comprador en el directorio y limpia el formulario
   const handleCreateCliente = (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreClienteNew.trim()) return;
@@ -214,6 +228,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     setNombreClienteNew('');
   };
 
+  // Texto descriptivo leído por el botón de ayuda por voz del módulo
   const cajaAudioReadout = `Módulo de ventas y caja diaria. El saldo actual de tu caja es de ${saldoNetoCaja} pesos, con un total de ingresos por ${ingresosCaja} pesos y egresos por ${egresosCaja} pesos. Al registrar una venta, el valor se suma automáticamente a la caja.`;
 
   return (
@@ -764,6 +779,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
         </div>
       )}
 
+      {/* MODAL DE VISTA PREVIA Y GENERACIÓN DE FACTURA PDF */}
       {invoiceVenta && (
         <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-4 border-lime-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">

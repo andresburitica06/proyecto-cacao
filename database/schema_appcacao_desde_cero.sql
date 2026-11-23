@@ -1,15 +1,30 @@
--- AppCacao - esquema completo para MySQL 8+
--- ADVERTENCIA: elimina y recrea db_cacao_adso_v2.
+-- ============================================================================
+-- AppCacao - Esquema completo de base de datos desde cero (MySQL 8+)
+-- Propósito: Crea desde cero la base de datos operativa `db_cacao_adso_v2`
+--            utilizada por el backend de AppCacao, incluyendo tablas,
+--            restricciones de integridad, datos semilla de tipos de producto,
+--            índices de rendimiento y vistas de consulta consolidada.
+-- ADVERTENCIA: Este script ELIMINA y RECREA completamente `db_cacao_adso_v2`.
+-- ============================================================================
 
+-- Reinicio completo y creación de la base de datos con codificación UTF-8
 DROP DATABASE IF EXISTS db_cacao_adso_v2;
 CREATE DATABASE db_cacao_adso_v2
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 USE db_cacao_adso_v2;
 
+-- Configuración de juego de caracteres de sesión y zona horaria UTC
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
+-- ============================================================================
+-- 1. USUARIOS, FINCAS Y RELACIÓN DE ACCESO
+-- ============================================================================
+
+-- Tabla `usuarios`: cuentas del sistema autenticadas mediante cédula y hash
+-- de contraseña; define el rol global (`admin`, `administrador_finca`,
+-- `productor`, `operario`) y su estado de activación.
 CREATE TABLE usuarios (
   id_usuario BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   cedula VARCHAR(20) NOT NULL UNIQUE,
@@ -23,6 +38,9 @@ CREATE TABLE usuarios (
   actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- Tabla `fincas`: predios cacaoteros con ubicación, propietario, áreas totales
+-- y de cacao, tecnificación y borrado lógico (`activa`). Incluye CHECK para
+-- impedir hectáreas negativas o que el área de cacao supere el área total.
 CREATE TABLE fincas (
   id_finca BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
@@ -45,6 +63,8 @@ CREATE TABLE fincas (
   )
 ) ENGINE=InnoDB;
 
+-- Tabla puente `usuario_finca` (relación N:M entre `usuarios` y `fincas`):
+-- Controla qué fincas puede consultar o gestionar cada usuario y bajo qué rol.
 CREATE TABLE usuario_finca (
   id_usuario BIGINT UNSIGNED NOT NULL,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -54,6 +74,12 @@ CREATE TABLE usuario_finca (
   FOREIGN KEY (id_finca) REFERENCES fincas(id_finca) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 2. CATÁLOGO DE TIPOS DE PRODUCTO Y DATOS SEMILLA
+-- ============================================================================
+
+-- Tabla `tipos_producto`: catálogo maestro de presentaciones/estados del cacao
+-- referenciado por `inventarios` y `ventas` mediante su `codigo` único.
 CREATE TABLE tipos_producto (
   id_tipo_producto BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   codigo VARCHAR(40) NOT NULL UNIQUE,
@@ -61,12 +87,19 @@ CREATE TABLE tipos_producto (
   descripcion VARCHAR(255) NULL
 ) ENGINE=InnoDB;
 
+-- Datos semilla iniciales de tipos de producto de cacao
 INSERT INTO tipos_producto (codigo, nombre, descripcion) VALUES
   ('cacao_baba', 'Cacao Baba Fresco', 'Cacao en baba, aun sin fermentar'),
   ('cacao_fermentado', 'Cacao Fermentado', 'Cacao en etapa intermedia'),
   ('cacao_seco_premium', 'Cacao Seco Premium', 'Cacao seco de mejor calidad'),
   ('cacao_seco_corriente', 'Cacao Seco Corriente', 'Cacao seco corriente o pasilla');
 
+-- ============================================================================
+-- 3. ZONAS DE CULTIVO, RECOLECCIONES Y PROCESOS POSCOSECHA
+-- ============================================================================
+
+-- Tabla `zonas_cultivo`: lotes o parcelas dentro de cada finca, con variedad
+-- de cacao, árboles estimados, hectáreas, año de siembra y borrado lógico.
 CREATE TABLE zonas_cultivo (
   id_zona BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -83,6 +116,9 @@ CREATE TABLE zonas_cultivo (
   CONSTRAINT ck_zona_hectareas CHECK (hectareas >= 0)
 ) ENGINE=InnoDB;
 
+-- Tabla `recolecciones`: registro de cosechas en baba por finca y lote
+-- opcional, incluyendo rendimiento estimado/real en seco, estado del proceso,
+-- jornales y responsable.
 CREATE TABLE recolecciones (
   id_recoleccion BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -107,6 +143,8 @@ CREATE TABLE recolecciones (
   )
 ) ENGINE=InnoDB;
 
+-- Tabla `procesos_cacao`: detalle poscosecha 1:1 de cada recolección
+-- (fechas, días y volteos de fermentación, secado, humedad y calidad final).
 CREATE TABLE procesos_cacao (
   id_proceso BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_recoleccion BIGINT UNSIGNED NOT NULL UNIQUE,
@@ -121,6 +159,13 @@ CREATE TABLE procesos_cacao (
   FOREIGN KEY (id_recoleccion) REFERENCES recolecciones(id_recoleccion) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 4. INVENTARIOS, CLIENTES COMPRADORES, CAJA Y VENTAS
+-- ============================================================================
+
+-- Tabla `inventarios`: existencias en bodega por finca, tipo de producto,
+-- estado de calidad y ubicación. Controla kilos recolectados, vendidos y
+-- disponibles, validando consistencia mediante CHECK.
 CREATE TABLE inventarios (
   id_inventario BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -147,6 +192,8 @@ CREATE TABLE inventarios (
   )
 ) ENGINE=InnoDB;
 
+-- Tabla `clientes_compradores`: compradores registrados por cada usuario
+-- (cooperativas, intermediarios, empresas chocolateras o particulares).
 CREATE TABLE clientes_compradores (
   id_cliente BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   documento VARCHAR(30) NOT NULL UNIQUE,
@@ -160,6 +207,7 @@ CREATE TABLE clientes_compradores (
   FOREIGN KEY (id_usuario_registra) REFERENCES usuarios(id_usuario) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Tabla `cajas_diarias`: registro único de caja por finca y fecha con saldo inicial.
 CREATE TABLE cajas_diarias (
   id_caja BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -170,6 +218,8 @@ CREATE TABLE cajas_diarias (
   FOREIGN KEY (id_finca) REFERENCES fincas(id_finca) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- Tabla `ventas`: transacciones de venta de cacao asociadas a finca, cliente
+-- registrado o libre, usuario, caja diaria y tipo/calidad del producto vendido.
 CREATE TABLE ventas (
   id_venta BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -198,6 +248,8 @@ CREATE TABLE ventas (
   CONSTRAINT ck_venta_valores CHECK (kilos_vendidos > 0 AND precio_por_kg >= 0 AND total_venta >= 0)
 ) ENGINE=InnoDB;
 
+-- Tabla `movimientos_inventario`: kardex de trazabilidad para entradas por
+-- recolección o manuales, salidas por venta, ajustes y mermas.
 CREATE TABLE movimientos_inventario (
   id_movimiento_inventario BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_inventario BIGINT UNSIGNED NOT NULL,
@@ -215,6 +267,8 @@ CREATE TABLE movimientos_inventario (
   CONSTRAINT ck_movimiento_inventario CHECK (cantidad_kg <> 0)
 ) ENGINE=InnoDB;
 
+-- Tabla `movimientos_caja`: registro detallado de ingresos y egresos por caja
+-- diaria, categorizados por concepto operativo o comercial.
 CREATE TABLE movimientos_caja (
   id_movimiento_caja BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_caja BIGINT UNSIGNED NOT NULL,
@@ -232,12 +286,23 @@ CREATE TABLE movimientos_caja (
   CONSTRAINT ck_movimiento_caja CHECK (monto > 0)
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 5. ESTADO PERSISTENTE DE LA APLICACIÓN
+-- ============================================================================
+
+-- Tabla `estado_aplicacion`: almacena en JSON el estado de trabajo por usuario
+-- (clave `workspace_state:<id_usuario>`) sincronizado con el frontend.
 CREATE TABLE estado_aplicacion (
   clave VARCHAR(64) PRIMARY KEY,
   payload JSON NOT NULL,
   actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 6. ÍNDICES DE RENDIMIENTO
+-- ============================================================================
+
+-- Índices sobre claves foráneas y columnas de filtrado/ordenamiento frecuente
 CREATE INDEX idx_fincas_municipio ON fincas(municipio);
 CREATE INDEX idx_zonas_finca ON zonas_cultivo(id_finca);
 CREATE INDEX idx_recolecciones_fecha ON recolecciones(fecha_recoleccion);
@@ -248,6 +313,12 @@ CREATE INDEX idx_ventas_finca_fecha ON ventas(id_finca, fecha_venta);
 CREATE INDEX idx_ventas_cliente ON ventas(id_cliente);
 CREATE INDEX idx_movimientos_caja_fecha ON movimientos_caja(id_caja, fecha_movimiento);
 
+-- ============================================================================
+-- 7. VISTAS DE CONSULTA Y REPORTES
+-- ============================================================================
+
+-- Vista `vw_inventario_resumen_finca`: totales de inventario por finca
+-- (disponible, recolectado, vendido y desglose por estado de calidad).
 CREATE OR REPLACE VIEW vw_inventario_resumen_finca AS
 SELECT
   f.id_finca,
@@ -261,6 +332,8 @@ FROM fincas f
 LEFT JOIN inventarios i ON i.id_finca = f.id_finca
 GROUP BY f.id_finca, f.nombre;
 
+-- Vista `vw_historial_ventas_limpio`: listado legible de ventas con nombre de
+-- finca y resolución del nombre del cliente (catálogo o texto libre).
 CREATE OR REPLACE VIEW vw_historial_ventas_limpio AS
 SELECT
   v.id_venta,
@@ -280,6 +353,8 @@ FROM ventas v
 LEFT JOIN fincas f ON f.id_finca = v.id_finca
 LEFT JOIN clientes_compradores c ON c.id_cliente = v.id_cliente;
 
+-- Vista `vw_recolecciones_historial`: historial de cosechas enriquecido con el
+-- nombre de la finca y, si aplica, el nombre de la zona de cultivo.
 CREATE OR REPLACE VIEW vw_recolecciones_historial AS
 SELECT
   r.id_recoleccion,
