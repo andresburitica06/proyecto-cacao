@@ -1,0 +1,6 @@
+{
+  "name": "Sistema de Gestión de Cacao - ADSO",
+  "description": "Software agrícola accesible para pequeños y medianos cacaoteros con asistente de voz, gestión de fincas, recolección paso a paso, inventario y caja diaria.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
