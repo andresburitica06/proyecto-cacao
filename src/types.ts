@@ -1,5 +1,13 @@
+/**
+ * Definiciones de tipos e interfaces del dominio para la aplicación cacaotera.
+ * Centraliza los modelos de navegación, usuarios, fincas, cultivos, recolecciones,
+ * procesos de beneficio, inventario, clientes, ventas, caja y configuración de voz.
+ */
+
+/** Pestañas o vistas principales disponibles en la navegación de la aplicación. */
 export type ActiveTab = 'auth' | 'dashboard' | 'fincas' | 'recoleccion' | 'inventario' | 'ventas_caja' | 'clientes' | 'configuracion';
 
+/** Representa un usuario autenticado o registrado en la plataforma. */
 export interface Usuario {
   id: string;
   nombreCompleto: string;
@@ -13,16 +21,22 @@ export interface Usuario {
   fechaRegistro: string;
 }
 
+/** Clasificación de los tipos de producto de cacao manejados en inventario y ventas. */
 export type TipoProductoCacao = 'cacao_baba' | 'cacao_fermentado' | 'cacao_seco_premium' | 'cacao_seco_corriente';
 
+/** Estado de calidad del grano o producto de cacao. */
 export type EstadoCalidad = 'buen_estado' | 'mal_estado';
 
+/** Etapas del proceso poscosecha del cacao desde la recolección hasta el secado final. */
 export type EstadoProceso = 'baba' | 'fermentacion' | 'secado' | 'seco_listo';
 
+/** Métodos de pago admitidos al registrar una venta. */
 export type MetodoPago = 'efectivo' | 'transferencia' | 'fiado_credito';
 
+/** Categorías de egresos operativos de la finca registrados en caja. */
 export type CategoriaGasto = 'pago_jornales' | 'insumos_fertilizante' | 'transporte_flete' | 'mantenimiento_herramientas' | 'alimentacion' | 'otros_gastos';
 
+/** Información general y técnica de una finca cacaotera. */
 export interface Finca {
   id: string;
   nombre: string;
@@ -38,6 +52,7 @@ export interface Finca {
   fechaRegistro: string;
 }
 
+/** Lote o zona específica de cultivo dentro de una finca. */
 export interface ZonaCultivo {
   id: string;
   fincaId: string;
@@ -48,6 +63,7 @@ export interface ZonaCultivo {
   anoSiembra?: number;
 }
 
+/** Registro de una jornada de recolección de cacao en baba y su seguimiento. */
 export interface Recoleccion {
   id: string;
   fincaId: string;
@@ -62,6 +78,7 @@ export interface Recoleccion {
   notas?: string;
 }
 
+/** Seguimiento técnico de las etapas de fermentación y secado de una recolección. */
 export interface ProcesoCacao {
   id: string;
   recoleccionId: string;
@@ -74,6 +91,7 @@ export interface ProcesoCacao {
   calidadFinal?: 'premium_exportacion' | 'standard' | 'pasilla';
 }
 
+/** Registro de existencias de cacao almacenado en bodega por tipo y calidad. */
 export interface ProductoInventario {
   id: string;
   fincaId: string;
@@ -88,6 +106,7 @@ export interface ProductoInventario {
   fechaUltimaActualizacion: string;
 }
 
+/** Datos de un cliente comprador de cacao (cooperativa, intermediario, empresa o particular). */
 export interface Cliente {
   id: string;
   nombre: string;
@@ -97,6 +116,7 @@ export interface Cliente {
   municipio: string;
 }
 
+/** Registro de una operación comercial de venta de cacao. */
 export interface Venta {
   id: string;
   clienteId: string;
@@ -114,6 +134,7 @@ export interface Venta {
   comprobanteNumero?: string;
 }
 
+/** Movimiento financiero de ingreso o egreso asociado a la caja de la finca. */
 export interface MovimientoCaja {
   id: string;
   fecha: string;
@@ -125,6 +146,7 @@ export interface MovimientoCaja {
   registradoPor: string;
 }
 
+/** Preferencias del asistente de voz y opciones de accesibilidad visual. */
 export interface AjusteVozConfig {
   activo: boolean;
   velocidad: number; // 0.8 (lento) a 1.2 (rápido)

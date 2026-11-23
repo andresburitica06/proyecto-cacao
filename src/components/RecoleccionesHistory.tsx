@@ -1,8 +1,14 @@
+/**
+ * Componente de historial de recolecciones de cacao.
+ * Muestra una tabla ordenada por fecha con los registros guardados y permite
+ * editarlos en línea o finalizar su proceso registrando los kilos secos obtenidos.
+ */
 import React, { useRef, useState } from 'react';
 import { CheckCircle2, Edit3, Save } from 'lucide-react';
 import { Finca, EstadoProceso, Recoleccion, ZonaCultivo } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 
+/** Propiedades esperadas por el componente RecoleccionesHistory. */
 interface RecoleccionesHistoryProps {
   fincas: Finca[];
   zonas: ZonaCultivo[];
@@ -10,6 +16,7 @@ interface RecoleccionesHistoryProps {
   onUpdateRecoleccion: (id: string, changes: Partial<Omit<Recoleccion, 'id'>>) => void;
 }
 
+/** Etiquetas legibles en español para cada estado del proceso de poscosecha. */
 const STATE_LABELS: Record<EstadoProceso, string> = {
   baba: 'Cacao Baba Fresco',
   fermentacion: 'En Fermentacion',
@@ -23,18 +30,22 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
   recolecciones,
   onUpdateRecoleccion
 }) => {
+  // Referencia al contenedor del historial para desplazamiento programático si se requiere
   const historialRef = useRef<HTMLDivElement | null>(null);
+  // Estados para controlar qué registro se está editando o finalizando en línea
   const [editingId, setEditingId] = useState<string | null>(null);
   const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [kilosSecoFinales, setKilosSecoFinales] = useState('');
   const [notasFinalizacion, setNotasFinalizacion] = useState('');
   const [editForm, setEditForm] = useState({ kilosBaba: '', responsable: '', notas: '' });
 
+  // Inicia la edición en línea cargando los valores actuales de la recolección
   const startEdit = (rec: Recoleccion) => {
     setEditingId(rec.id);
     setEditForm({ kilosBaba: String(rec.kilosBaba), responsable: rec.responsable, notas: rec.notas || '' });
   };
 
+  // Valida y guarda los cambios de la edición recalculando el rendimiento seco estimado (38%)
   const saveEdit = () => {
     if (!editingId) return;
     const kilos = Number(editForm.kilosBaba) || 0;
@@ -49,12 +60,14 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
     setEditingId(null);
   };
 
+  // Abre el formulario de finalización prellenando los kilos secos reales o estimados
   const startFinalize = (rec: Recoleccion) => {
     setFinalizingId(rec.id);
     setKilosSecoFinales(rec.kilosSecoObtenidos ? String(rec.kilosSecoObtenidos) : String(rec.rendimientoEstimadoSeco));
     setNotasFinalizacion(rec.notas || '');
   };
 
+  // Marca la recolección como finalizada ('seco_listo') con los kilos secos obtenidos
   const saveFinalize = () => {
     if (!finalizingId) return;
     const kilosSeco = Number(kilosSecoFinales) || 0;
@@ -70,15 +83,18 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
     setNotasFinalizacion('');
   };
 
+  // Copia ordenada descendentemente por fecha para mostrar los registros más recientes primero
   const visibleHistory = [...recolecciones].sort((a, b) => b.fecha.localeCompare(a.fecha));
 
   return (
     <div ref={historialRef} id="historial-recolecciones" className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm space-y-4">
+      {/* Encabezado del historial con botón de ayuda por voz */}
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-black text-stone-900">Historial de recolecciones</h3>
         <VoiceHelpButton textToRead="Historial de recolecciones. Aqui puedes editar los registros guardados." size="sm" />
       </div>
 
+      {/* Tabla principal de recolecciones con scroll horizontal en pantallas pequeñas */}
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[760px]">
           <thead>
@@ -108,6 +124,7 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
 
                 return (
                   <React.Fragment key={rec.id}>
+                    {/* Fila de datos de la recolección (modo lectura o edición en línea) */}
                     <tr className="hover:bg-stone-50 align-top">
                       <td className="p-3 whitespace-nowrap">{rec.fecha}</td>
                       <td className="p-3">
@@ -148,6 +165,7 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
                         )}
                       </td>
                     </tr>
+                    {/* Fila desplegable para registrar los kilos secos finales y cerrar el proceso */}
                     {finalizingId === rec.id && (
                       <tr className="bg-emerald-50">
                         <td colSpan={8} className="p-4">

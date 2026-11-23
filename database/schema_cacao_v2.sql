@@ -1,15 +1,30 @@
--- Sistema de Gestión de Cacao ADSO - esquema funcional v2
--- Motor: MySQL 8+. Este archivo crea una base nueva; no modifica db_cacao_adso.
+-- ============================================================================
+-- Sistema de Gestión de Cacao ADSO - Esquema funcional v2
+-- Motor: MySQL 8+ (InnoDB, utf8mb4_unicode_ci)
+-- Propósito: Define la estructura relacional normalizada v2 para gestión
+--            territorial, usuarios, fincas, lotes, cosechas, procesos
+--            poscosecha, inventarios, clientes, ventas, caja diaria y estado
+--            de la aplicación. Crea `db_cacao_adso_v2` si no existe, sin
+--            modificar bases previas (`db_cacao_adso`).
+-- ============================================================================
 
+-- Creación y selección de la base de datos con soporte completo UTF-8
 CREATE DATABASE IF NOT EXISTS db_cacao_adso_v2
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE db_cacao_adso_v2;
 
+-- ============================================================================
+-- 1. CATÁLOGO TERRITORIAL
+-- ============================================================================
+
+-- Tabla `regiones`: catálogo de regiones o municipios principales.
 CREATE TABLE regiones (
   id_region BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(100) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
 
+-- Tabla `veredas`: divisiones rurales pertenecientes a una región.
+-- Relación N:1 con `regiones`; evita nombres de vereda duplicados en la misma región.
 CREATE TABLE veredas (
   id_vereda BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_region BIGINT UNSIGNED NOT NULL,
@@ -18,6 +33,12 @@ CREATE TABLE veredas (
   CONSTRAINT fk_vereda_region FOREIGN KEY (id_region) REFERENCES regiones(id_region)
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 2. USUARIOS, FINCAS Y CONTROL DE ACCESO
+-- ============================================================================
+
+-- Tabla `usuarios`: cuentas de acceso al sistema con autenticación por cédula
+-- y control de rol global (`admin`, `productor`, `operario`).
 CREATE TABLE usuarios (
   id_usuario BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   cedula VARCHAR(20) NOT NULL UNIQUE,
@@ -31,6 +52,8 @@ CREATE TABLE usuarios (
   actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- Tabla `fincas`: predios cacaoteros registrados con ubicación, áreas totales
+-- y áreas dedicadas a cacao (validadas mediante CHECK).
 CREATE TABLE fincas (
   id_finca BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
@@ -46,7 +69,8 @@ CREATE TABLE fincas (
   CONSTRAINT fk_finca_vereda FOREIGN KEY (id_vereda) REFERENCES veredas(id_vereda)
 ) ENGINE=InnoDB;
 
--- Control de acceso: esta tabla evita que un productor vea fincas ajenas.
+-- Tabla puente `usuario_finca` (relación N:M entre `usuarios` y `fincas`):
+-- Control de acceso por predio y rol específico; evita que un productor vea fincas ajenas.
 CREATE TABLE usuario_finca (
   id_usuario BIGINT UNSIGNED NOT NULL,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -56,12 +80,19 @@ CREATE TABLE usuario_finca (
   CONSTRAINT fk_usuario_finca_finca FOREIGN KEY (id_finca) REFERENCES fincas(id_finca) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 3. CULTIVOS, LOTES Y CATÁLOGO DE PRODUCTOS
+-- ============================================================================
+
+-- Tabla `tipos_cultivo`: catálogo de variedades o tipos de cultivo sembrados.
 CREATE TABLE tipos_cultivo (
   id_tipo_cultivo BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(100) NOT NULL UNIQUE,
   descripcion TEXT NULL
 ) ENGINE=InnoDB;
 
+-- Tabla `zonas_cultivo`: lotes o parcelas dentro de cada finca, asociados a un
+-- tipo de cultivo, área sembrada y cantidad estimada de árboles.
 CREATE TABLE zonas_cultivo (
   id_zona BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -76,11 +107,13 @@ CREATE TABLE zonas_cultivo (
   CONSTRAINT fk_zona_cultivo FOREIGN KEY (id_tipo_cultivo) REFERENCES tipos_cultivo(id_tipo_cultivo)
 ) ENGINE=InnoDB;
 
+-- Tabla `tipos_producto`: categorías generales de producto comercializable.
 CREATE TABLE tipos_producto (
   id_tipo_producto BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(100) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
 
+-- Tabla `productos`: artículos concretos derivados del cacao con su tipo y unidad de medida.
 CREATE TABLE productos (
   id_producto BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_tipo_producto BIGINT UNSIGNED NOT NULL,
@@ -89,6 +122,12 @@ CREATE TABLE productos (
   CONSTRAINT fk_producto_tipo FOREIGN KEY (id_tipo_producto) REFERENCES tipos_producto(id_tipo_producto)
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 4. COSECHA, POSCOSECHA, PRODUCCIÓN E INVENTARIOS
+-- ============================================================================
+
+-- Tabla `recolecciones`: registro de cosechas de cacao en baba por lote,
+-- incluyendo jornales empleados, responsable y usuario que registra.
 CREATE TABLE recolecciones (
   id_recoleccion BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_zona BIGINT UNSIGNED NOT NULL,
@@ -104,6 +143,8 @@ CREATE TABLE recolecciones (
   CONSTRAINT fk_recoleccion_usuario FOREIGN KEY (id_usuario_registra) REFERENCES usuarios(id_usuario)
 ) ENGINE=InnoDB;
 
+-- Tabla `procesos_cacao`: seguimiento poscosecha 1:1 de cada recolección
+-- (etapa actual, días de fermentación/secado y porcentaje de humedad).
 CREATE TABLE procesos_cacao (
   id_proceso BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_recoleccion BIGINT UNSIGNED NOT NULL UNIQUE,
@@ -117,6 +158,8 @@ CREATE TABLE procesos_cacao (
   CONSTRAINT fk_proceso_recoleccion FOREIGN KEY (id_recoleccion) REFERENCES recolecciones(id_recoleccion) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- Tabla `inventarios`: existencias disponibles por finca, producto y ubicación
+-- en bodega, con precio de referencia por kilogramo.
 CREATE TABLE inventarios (
   id_inventario BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -131,6 +174,8 @@ CREATE TABLE inventarios (
   CONSTRAINT fk_inventario_producto FOREIGN KEY (id_producto) REFERENCES productos(id_producto)
 ) ENGINE=InnoDB;
 
+-- Tabla `producciones`: vincula un proceso de beneficio finalizado con el
+-- inventario receptor y registra el rendimiento real obtenido en kilogramos.
 CREATE TABLE producciones (
   id_produccion BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_proceso BIGINT UNSIGNED NOT NULL,
@@ -142,6 +187,8 @@ CREATE TABLE producciones (
   CONSTRAINT fk_produccion_inventario FOREIGN KEY (id_inventario) REFERENCES inventarios(id_inventario)
 ) ENGINE=InnoDB;
 
+-- Tabla `movimientos_inventario`: kardex histórico de entradas, salidas,
+-- ajustes y mermas aplicados sobre cada registro de inventario.
 CREATE TABLE movimientos_inventario (
   id_movimiento BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_inventario BIGINT UNSIGNED NOT NULL,
@@ -155,6 +202,12 @@ CREATE TABLE movimientos_inventario (
   CONSTRAINT fk_movimiento_inventario_usuario FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario)
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 5. CLIENTES, VENTAS Y CAJA DIARIA
+-- ============================================================================
+
+-- Tabla `clientes_compradores`: directorio de compradores (cooperativas,
+-- empresas o particulares) identificados de forma única por NIT o cédula.
 CREATE TABLE clientes_compradores (
   id_cliente BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nit_cedula VARCHAR(30) NOT NULL UNIQUE,
@@ -164,6 +217,8 @@ CREATE TABLE clientes_compradores (
   municipio VARCHAR(100) NULL
 ) ENGINE=InnoDB;
 
+-- Tabla `cajas_diarias`: apertura de caja por finca y fecha calendario
+-- (única por combinación `id_finca`, `fecha`) con su saldo inicial.
 CREATE TABLE cajas_diarias (
   id_caja BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -173,6 +228,8 @@ CREATE TABLE cajas_diarias (
   CONSTRAINT fk_caja_finca FOREIGN KEY (id_finca) REFERENCES fincas(id_finca)
 ) ENGINE=InnoDB;
 
+-- Tabla `ventas`: encabezado de ventas realizadas por una finca a un cliente,
+-- asociadas al usuario registrador y opcionalmente a una caja diaria.
 CREATE TABLE ventas (
   id_venta BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_finca BIGINT UNSIGNED NOT NULL,
@@ -190,6 +247,8 @@ CREATE TABLE ventas (
   CONSTRAINT fk_venta_caja FOREIGN KEY (id_caja) REFERENCES cajas_diarias(id_caja)
 ) ENGINE=InnoDB;
 
+-- Tabla `detalle_ventas`: ítems o líneas de cada venta con relación al
+-- inventario descontado, cantidad vendida, precio unitario y subtotal.
 CREATE TABLE detalle_ventas (
   id_detalle BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_venta BIGINT UNSIGNED NOT NULL,
@@ -202,6 +261,8 @@ CREATE TABLE detalle_ventas (
   CONSTRAINT fk_detalle_inventario FOREIGN KEY (id_inventario) REFERENCES inventarios(id_inventario)
 ) ENGINE=InnoDB;
 
+-- Tabla `movimientos_caja`: ingresos y egresos registrados en cada caja diaria,
+-- con vínculo opcional a la venta que originó el movimiento.
 CREATE TABLE movimientos_caja (
   id_movimiento BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   id_caja BIGINT UNSIGNED NOT NULL,
@@ -218,12 +279,24 @@ CREATE TABLE movimientos_caja (
   CONSTRAINT fk_movimiento_caja_venta FOREIGN KEY (id_venta) REFERENCES ventas(id_venta)
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 6. ESTADO PERSISTENTE DE LA APLICACIÓN
+-- ============================================================================
+
+-- Tabla `estado_aplicacion`: almacenamiento clave-valor en formato JSON para
+-- persistir configuraciones o estado del espacio de trabajo en el frontend.
 CREATE TABLE estado_aplicacion (
   clave VARCHAR(64) PRIMARY KEY,
   payload JSON NOT NULL,
   actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- ============================================================================
+-- 7. ÍNDICES DE RENDIMIENTO
+-- ============================================================================
+
+-- Acelera consultas de lotes por finca, recolecciones por fecha, inventarios
+-- por finca, ventas por finca/fecha y movimientos de caja por caja/fecha.
 CREATE INDEX idx_zonas_finca ON zonas_cultivo(id_finca);
 CREATE INDEX idx_recolecciones_fecha ON recolecciones(fecha_recoleccion);
 CREATE INDEX idx_inventario_finca ON inventarios(id_finca);

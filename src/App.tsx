@@ -1,6 +1,7 @@
 /**
- * Sistema de Gestión de Cacao - ADSO
- * Software para Pequeños y Medianor Productores Cacaoteros
+ * Componente raíz de la aplicación: Sistema de Gestión de Cacao - ADSO.
+ * Centraliza el estado global de sesión, carga de datos desde la API MySQL,
+ * navegación entre módulos, asistente de voz y operaciones CRUD del sistema.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -43,6 +44,7 @@ import {
   INITIAL_CAJA 
 } from './data/initialData';
 
+// Transforma una fila devuelta por el endpoint administrativo de clientes al modelo Usuario
 const mapAdminClientRow = (row: {
   id_usuario: number;
   cedula: string;
@@ -61,6 +63,7 @@ const mapAdminClientRow = (row: {
   fechaRegistro: new Date().toISOString().split('T')[0]
 });
 
+// Restablece los estados principales del espacio de trabajo a los arreglos iniciales
 const resetWorkspaceState = (
   setFincas: React.Dispatch<React.SetStateAction<Finca[]>>,
   setZonas: React.Dispatch<React.SetStateAction<ZonaCultivo[]>>,
@@ -80,13 +83,14 @@ const resetWorkspaceState = (
 };
 
 export default function App() {
+  // Pestaña activa: inicia en dashboard si ya existe sesión guardada en localStorage, o en auth si no
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const token = localStorage.getItem('cacao_token');
     const saved = localStorage.getItem('cacao_user');
     return token && saved ? 'dashboard' : 'auth';
   });
 
-  // Logged in user state
+  // Estado del usuario autenticado recuperado de localStorage (limpia datos si el JSON es inválido)
   const [currentUser, setCurrentUser] = useState<Usuario | null>(() => {
     const token = localStorage.getItem('cacao_token');
     const saved = localStorage.getItem('cacao_user');
@@ -100,11 +104,12 @@ export default function App() {
     }
   });
 
+  // Token JWT de autenticación, lista de usuarios para el panel admin y bandera de carga inicial
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('cacao_token') || '');
   const [adminUsers, setAdminUsers] = useState<Usuario[]>([]);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
-  // Persistent States
+  // Estados principales del dominio cacaotero sincronizados con el backend
   const [fincas, setFincas] = useState<Finca[]>(() => {
     return INITIAL_FINCAS;
   });
@@ -133,11 +138,12 @@ export default function App() {
     return INITIAL_CAJA;
   });
 
-  // Direct modal trigger flags from dashboard
+  // Banderas para abrir modales de acceso rápido directamente desde el Dashboard
   const [quickOpenHarvest, setQuickOpenHarvest] = useState(false);
   const [quickOpenSale, setQuickOpenSale] = useState(false);
   const [quickOpenExpense, setQuickOpenExpense] = useState(false);
 
+  // Persiste o elimina la información del usuario activo en localStorage
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('cacao_user', JSON.stringify(currentUser));
@@ -146,6 +152,7 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Persiste o elimina el token JWT en localStorage
   useEffect(() => {
     if (authToken) {
       localStorage.setItem('cacao_token', authToken);
@@ -154,6 +161,7 @@ export default function App() {
     }
   }, [authToken]);
 
+  // Escucha el evento global de sesión expirada/inválida para cerrar sesión automáticamente
   useEffect(() => {
     const handleInvalidSession = () => {
       setAuthToken('');
@@ -168,6 +176,7 @@ export default function App() {
     return () => window.removeEventListener('cacao-session-invalid', handleInvalidSession);
   }, []);
 
+  // Limpia claves antiguas de almacenamiento local al montar la aplicación
   useEffect(() => {
     localStorage.removeItem('cacao_recolecciones');
     Object.keys(localStorage)
@@ -175,6 +184,7 @@ export default function App() {
       .forEach((key) => localStorage.removeItem(key));
   }, []);
 
+  // Carga en paralelo zonas, recolecciones, inventario, clientes, ventas y caja desde MySQL
   useEffect(() => {
     if (!currentUser || !authToken) {
       setWorkspaceLoaded(false);
@@ -274,6 +284,7 @@ export default function App() {
     };
   }, [authToken, currentUser]);
 
+  // Carga el listado de fincas visibles para el usuario autenticado
   useEffect(() => {
     if (!authToken || !currentUser) return;
     let cancelled = false;
@@ -303,6 +314,7 @@ export default function App() {
     return () => { cancelled = true; };
   }, [authToken, currentUser]);
 
+  // Carga el directorio de productores únicamente cuando el usuario tiene rol de administrador
   useEffect(() => {
     if (!currentUser || currentUser.rol !== 'admin' || !authToken) {
       setAdminUsers([]);
@@ -323,7 +335,7 @@ export default function App() {
     };
   }, [currentUser, authToken]);
 
-  // Auth handlers
+  // Manejadores de autenticación (inicio de sesión, registro y cierre de sesión)
   const handleLoginSuccess = (user: Usuario, token: string) => {
     setCurrentUser(user);
     setAuthToken(token);
@@ -344,7 +356,7 @@ export default function App() {
     setActiveTab('auth');
   };
 
-  // Handlers for state updates
+  // Funciones auxiliares de mapeo entre el modelo Finca del frontend y el formato de la API
   const toApiFinca = (finca: Omit<Finca, 'id' | 'fechaRegistro'>) => ({
     nombre: String(finca.nombre || '').trim(),
     propietario: String(finca.propietario || '').trim(),
@@ -373,6 +385,7 @@ export default function App() {
     fechaRegistro: String(row.creado_en).slice(0, 10)
   });
 
+  // Crea una nueva finca en la API y la agrega al inicio del estado local
   const handleAddFinca = async (newFincaData: Omit<Finca, 'id' | 'fechaRegistro'>) => {
     if (!authToken) return false;
     try {
@@ -385,6 +398,7 @@ export default function App() {
     }
   };
 
+  // Desactiva una finca en la API y limpia del estado local sus registros dependientes
   const handleDeleteFinca = async (id: string) => {
     if (!authToken) return;
     try {
@@ -400,6 +414,7 @@ export default function App() {
     setCaja(prev => prev.filter(mov => mov.referenciaId ? ventas.some(venta => venta.id === mov.referenciaId && venta.fincaId !== id) : true));
   };
 
+  // Registra un nuevo lote o zona de cultivo en una finca
   const handleAddZona = async (newZonaData: Omit<ZonaCultivo, 'id'>) => {
     if (!authToken) return;
     try {
@@ -418,6 +433,7 @@ export default function App() {
     }
   };
 
+  // Elimina un lote o zona de cultivo existente
   const handleDeleteZona = async (id: string) => {
     if (!authToken) return;
     try {
@@ -428,6 +444,7 @@ export default function App() {
     }
   };
 
+  // Registra una nueva recolección de cosecha en la API y actualiza el listado local
   const handleAddRecoleccion = async (newRecData: Omit<Recoleccion, 'id'>) => {
     if (!authToken) return;
     try {
@@ -462,6 +479,7 @@ export default function App() {
     }
   };
 
+  // Actualiza los datos o estado de proceso de una recolección existente
   const handleUpdateRecoleccion = async (id: string, changes: Partial<Omit<Recoleccion, 'id'>>) => {
     if (!authToken) return;
     const current = recolecciones.find(rec => rec.id === id);
@@ -484,10 +502,12 @@ export default function App() {
     }
   };
 
+  // Elimina una recolección del estado local
   const handleDeleteRecoleccion = (id: string) => {
     setRecolecciones(prev => (Array.isArray(prev) ? prev : []).filter(rec => rec.id !== id));
   };
 
+  // Actualiza rápidamente la cantidad en kilogramos de un producto en inventario
   const handleUpdateInventario = async (id: string, nuevaCantidadKg: number) => {
     if (!authToken) return;
     const current = inventario.find(item => item.id === id);
@@ -505,6 +525,7 @@ export default function App() {
     }
   };
 
+  // Actualiza los datos completos de un producto del inventario
   const handleUpdateProductoInventario = async (id: string, cambios: Omit<ProductoInventario, 'id' | 'fincaId' | 'fechaUltimaActualizacion'>) => {
     if (!authToken) return;
     try {
@@ -524,6 +545,7 @@ export default function App() {
     }
   };
 
+  // Edita una finca en la API y recarga el listado actualizado desde el servidor
   const handleUpdateFinca = async (id: string, cambios: Omit<Finca, 'id' | 'fechaRegistro'>) => {
     if (!authToken) return;
     try {
@@ -549,6 +571,7 @@ export default function App() {
     }
   };
 
+  // Permite al administrador restablecer la contraseña de un productor
   const handleResetUserPassword = async (userId: string, password: string) => {
     if (!authToken) return;
 
@@ -561,6 +584,7 @@ export default function App() {
     }
   };
 
+  // Crea un nuevo registro de producto en el inventario de bodega
   const handleAddProductoInventario = async (prodData: Omit<ProductoInventario, 'id' | 'fechaUltimaActualizacion'>) => {
     if (!authToken) return;
     try {
@@ -592,6 +616,7 @@ export default function App() {
     }
   };
 
+  // Registra una venta, descuenta los kilos vendidos del inventario y genera el ingreso en caja si está pagada
   const handleAddVenta = async (ventaData: Omit<Venta, 'id'>) => {
     if (!authToken) return;
     try {
@@ -653,6 +678,7 @@ export default function App() {
     }
   };
 
+  // Registra un movimiento de ingreso o egreso en caja asociado a la finca activa
   const handleAddGastoCaja = async (movData: Omit<MovimientoCaja, 'id'>) => {
     if (!authToken) return;
     try {
@@ -682,6 +708,7 @@ export default function App() {
     }
   };
 
+  // Crea un nuevo cliente comprador en la API y lo añade al estado local
   const handleAddCliente = async (clienteData: Omit<Cliente, 'id'>) => {
     if (!authToken) return;
     try {
@@ -723,6 +750,7 @@ export default function App() {
   const ventaIdsVisibles = new Set(ventasVisibles.map(venta => venta.id));
   const cajaVisible = isAdmin ? caja : caja.filter(item => ventaIdsVisibles.has(item.referenciaId || '') || item.registradoPor === currentUser?.nombreCompleto);
 
+  // Cálculo de totales globales visibles: kilos de cacao seco listo y saldo neto de caja
   const totalKilosInventario = recoleccionesVisibles
     .filter((rec) => rec.estadoProceso === 'seco_listo')
     .reduce((acc, curr) => acc + (curr.kilosSecoObtenidos ?? curr.rendimientoEstimadoSeco ?? 0), 0);
@@ -829,6 +857,7 @@ export default function App() {
       {/* 3. Área Principal de Contenido del Módulo */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
 
+        {/* Módulo de inicio / resumen general */}
         {activeTab === 'dashboard' && (
           <DashboardView
             fincas={fincasVisibles}
@@ -854,6 +883,7 @@ export default function App() {
           />
         )}
 
+        {/* Módulo de gestión de fincas y lotes de cultivo */}
         {activeTab === 'fincas' && (
           <FincasView
             fincas={fincasVisibles}
@@ -867,6 +897,7 @@ export default function App() {
           />
         )}
 
+        {/* Módulo de registro y seguimiento de recolecciones */}
         {activeTab === 'recoleccion' && (
           <RecoleccionView
             fincas={fincasVisibles}
@@ -877,6 +908,7 @@ export default function App() {
           />
         )}
 
+        {/* Módulo de historial e inventario de cacao */}
         {activeTab === 'inventario' && (
           <InventarioView
             fincas={fincasVisibles}
@@ -890,6 +922,7 @@ export default function App() {
           />
         )}
 
+        {/* Módulo de ventas, compradores y movimientos de caja */}
         {activeTab === 'ventas_caja' && (
           <VentasCajaView
             fincas={fincasVisibles}
@@ -905,6 +938,7 @@ export default function App() {
           />
         )}
 
+        {/* Paneles exclusivos para el rol administrador */}
         {activeTab === 'clientes' && isAdmin && (
           <AdminClientsView users={adminUsers} fincas={fincas} inventario={inventario} recolecciones={recolecciones} caja={caja} onResetPassword={handleResetUserPassword} />
         )}

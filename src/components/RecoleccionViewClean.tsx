@@ -1,9 +1,15 @@
+/**
+ * Vista simplificada para registrar cosechas de cacao por pasos.
+ * Permite navegar libremente entre los 4 pasos del formulario (finca/lote, kilos,
+ * datos rápidos y confirmación) y guardar el registro con soporte de voz.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calculator, CheckCircle2, Edit3, Save, Scale, ShoppingBag } from 'lucide-react';
 import { EstadoProceso, Finca, Recoleccion, ZonaCultivo } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 
+/** Propiedades esperadas por el componente RecoleccionViewClean. */
 interface RecoleccionViewProps {
   fincas: Finca[];
   zonas: ZonaCultivo[];
@@ -12,6 +18,7 @@ interface RecoleccionViewProps {
   onUpdateRecoleccion: (id: string, changes: Partial<Omit<Recoleccion, 'id'>>) => void;
 }
 
+/** Etiquetas legibles en español para cada estado del proceso de poscosecha. */
 const STATE_LABELS: Record<EstadoProceso, string> = {
   baba: 'Cacao Baba Fresco',
   fermentacion: 'En Fermentacion',
@@ -26,6 +33,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
   onAddRecoleccion,
   onUpdateRecoleccion
 }) => {
+  // Estados del asistente paso a paso y campos del formulario de cosecha
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedFincaId, setSelectedFincaId] = useState<string>(fincas[0]?.id || '');
   const [modoRegistro, setModoRegistro] = useState<'finca' | 'zona'>('zona');
@@ -34,10 +42,12 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
   const [jornalesUtilizados, setJornalesUtilizados] = useState('2');
   const [responsable, setResponsable] = useState('Don Jose Ignacio Gomez');
   const [notas, setNotas] = useState('');
+  // Estados de retroalimentación visual al guardar
   const [guardadoExitoso, setGuardadoExitoso] = useState('');
   const [guardadoError, setGuardadoError] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [guardadosHoy, setGuardadosHoy] = useState(0);
+  // Estados para edición y finalización de registros en la tabla de historial embebida
   const [editingId, setEditingId] = useState<string | null>(null);
   const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [kilosSecoFinales, setKilosSecoFinales] = useState('');
@@ -45,24 +55,29 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
   const [editForm, setEditForm] = useState({ kilosBaba: '', responsable: '', notas: '' });
   const historialRef = useRef<HTMLDivElement | null>(null);
 
+  // Conversión numérica de kilos en baba y cálculo estimado de rendimiento seco (~38%)
   const kilosBabaNum = Number(kilosBaba) || 0;
   const rendimientoCalculado = Math.round((kilosBabaNum * 0.38) * 10) / 10;
 
+  // Filtra los lotes/zonas pertenecientes a la finca seleccionada actualmente
   const zonasDisponibles = useMemo(
     () => zonas.filter((zona) => zona.fincaId === selectedFincaId),
     [zonas, selectedFincaId]
   );
 
+  // Selecciona automáticamente la primera finca disponible si aún no hay ninguna seleccionada
   useEffect(() => {
     if (!selectedFincaId && fincas[0]?.id) {
       setSelectedFincaId(fincas[0].id);
     }
   }, [fincas, selectedFincaId]);
 
+  // Sanitiza la entrada de kilos permitiendo únicamente dígitos y punto decimal
   const handleKilosChange = (value: string) => {
     setKilosBaba(value.replace(/[^\d.]/g, ''));
   };
 
+  // Valida los datos, registra la nueva cosecha y reinicia el formulario con confirmación por voz
   const submitHarvest = (e?: React.FormEvent) => {
     e?.preventDefault();
     setGuardadoError('');
@@ -113,11 +128,13 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
     setGuardando(false);
   };
 
+  // Inicia la edición en línea de un registro del historial
   const startEdit = (rec: Recoleccion) => {
     setEditingId(rec.id);
     setEditForm({ kilosBaba: String(rec.kilosBaba), responsable: rec.responsable, notas: rec.notas || '' });
   };
 
+  // Guarda los cambios de edición recalculando el rendimiento seco estimado
   const saveEdit = () => {
     if (!editingId) return;
     const kilos = Number(editForm.kilosBaba) || 0;
@@ -132,12 +149,14 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
     setEditingId(null);
   };
 
+  // Abre el formulario para finalizar el proceso de secado de una recolección
   const startFinalize = (rec: Recoleccion) => {
     setFinalizingId(rec.id);
     setKilosSecoFinales(rec.kilosSecoObtenidos ? String(rec.kilosSecoObtenidos) : String(rec.rendimientoEstimadoSeco));
     setNotasFinalizacion(rec.notas || '');
   };
 
+  // Registra los kilos secos finales y cambia el estado del lote a 'seco_listo'
   const saveFinalize = () => {
     if (!finalizingId) return;
     const kilosSeco = Number(kilosSecoFinales) || 0;
@@ -153,10 +172,12 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
     setNotasFinalizacion('');
   };
 
+  // Lista ordenada por fecha descendente para el historial
   const visibleHistory = [...recolecciones].sort((a, b) => b.fecha.localeCompare(a.fecha));
 
   return (
     <div className="space-y-6 pb-12 animate-fadeIn">
+      {/* Encabezado principal del módulo de recolección */}
       <div className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
           <div>
@@ -170,6 +191,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
         </div>
       </div>
 
+      {/* Barra interactiva de navegación por pasos (1 a 4) */}
       <div className="grid grid-cols-4 gap-2 text-center">
         {['1. Finca', '2. Kilos', '3. Estado', '4. Guardar'].map((label, index) => {
           const n = (index + 1) as 1 | 2 | 3 | 4;
@@ -186,13 +208,16 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
         })}
       </div>
 
+      {/* Contenedor del formulario multipaso */}
       <div className="bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-6 shadow-sm">
         <form onSubmit={submitHarvest} className="space-y-6">
+          {/* Mensajes de estado (error, éxito, guardando y contador de sesión) */}
           {guardadoError && <div className="p-3 rounded-2xl border border-red-300 bg-red-50 text-red-900 font-bold">{guardadoError}</div>}
           {guardadoExitoso && <div className="p-3 rounded-2xl border border-emerald-300 bg-emerald-50 text-emerald-900 font-bold">{guardadoExitoso}</div>}
           {guardando && <div className="p-3 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 font-bold">Guardando cosecha...</div>}
           <div className="text-xs font-bold text-stone-500">Guardados en esta sesion: {guardadosHoy}</div>
 
+          {/* Paso 1: selección de finca, modo de registro y lote */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between bg-stone-50 p-4 rounded-2xl border border-stone-200">
@@ -241,6 +266,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Paso 2: ingreso de kilos en baba y calculadora de rendimiento en seco */}
           {step === 2 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
               <div className="bg-amber-50 p-5 rounded-3xl border-2 border-amber-300 space-y-3">
@@ -274,6 +300,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Paso 3: datos operativos (jornales, responsable y notas) */}
           {step === 3 && (
             <div className="space-y-4">
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
@@ -294,6 +321,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Paso 4: resumen de confirmación antes de guardar */}
           {step === 4 && (
             <div className="space-y-4">
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
@@ -310,6 +338,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Botón de envío del formulario */}
           <div className="flex justify-end pt-4 border-t border-stone-200">
             <button type="submit" className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5" />
@@ -319,6 +348,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
         </form>
       </div>
 
+      {/* Tabla de historial embebida (oculta por bandera condicional; el historial se renderiza en RecoleccionesHistory) */}
       {false && <div ref={historialRef} id="historial-recolecciones" className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-black text-stone-900">Historial de recolecciones</h3>

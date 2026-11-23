@@ -1,3 +1,8 @@
+/**
+ * Vista principal del módulo de recolección de cacao.
+ * Implementa un asistente guiado de 4 pasos (finca/lote, kilos en baba, datos rápidos y
+ * confirmación) junto con un historial interactivo para editar y finalizar cosechas.
+ */
 import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -13,6 +18,7 @@ import { Finca, EstadoProceso, Recoleccion, ZonaCultivo } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 
+/** Propiedades esperadas por el componente RecoleccionView. */
 interface RecoleccionViewProps {
   fincas: Finca[];
   zonas: ZonaCultivo[];
@@ -22,6 +28,7 @@ interface RecoleccionViewProps {
   onDeleteRecoleccion: (id: string) => void;
 }
 
+/** Etiquetas legibles en español para cada estado del proceso de poscosecha. */
 const STATE_LABELS: Record<EstadoProceso, string> = {
   baba: 'Cacao Baba Fresco',
   fermentacion: 'En Fermentación',
@@ -37,6 +44,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
   onUpdateRecoleccion,
   onDeleteRecoleccion
 }) => {
+  // Estados del asistente por pasos y campos del formulario de recolección
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedFincaId, setSelectedFincaId] = useState<string>(fincas[0]?.id || '');
   const [modoRegistro, setModoRegistro] = useState<'finca' | 'zona'>('zona');
@@ -46,11 +54,14 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
   const [jornalesUtilizados, setJornalesUtilizados] = useState<string>('2');
   const [responsable, setResponsable] = useState<string>('Don Jose Ignacio Gómez');
   const [notas, setNotas] = useState<string>('');
+  // Valor mostrado en la tarjeta de calculadora de rendimiento seco
   const [rendimientoCalculado, setRendimientoCalculado] = useState<number>(Math.round((Number(kilosBaba || 0) * 0.38) * 10) / 10);
+  // Estados para edición y finalización de registros en el historial
   const [editingId, setEditingId] = useState<string | null>(null);
   const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [kilosSecoFinales, setKilosSecoFinales] = useState<string>('');
   const [notasFinalizacion, setNotasFinalizacion] = useState<string>('');
+  // Estados de retroalimentación al guardar y resumen del último registro
   const [guardadoExitoso, setGuardadoExitoso] = useState<string>('');
   const [guardadoError, setGuardadoError] = useState<string>('');
   const [guardando, setGuardando] = useState<boolean>(false);
@@ -63,24 +74,29 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
   });
   const historialRef = useRef<HTMLDivElement | null>(null);
 
+  // Conversión numérica de kilos en baba y cálculo estimado de rendimiento seco (~38%)
   const kilosBabaNum = Number(kilosBaba) || 0;
   const rendimientoSecoEstimado = Math.round((kilosBabaNum * 0.38) * 10) / 10;
+  // Filtra las zonas/lotes correspondientes a la finca seleccionada
   const zonasDisponibles = useMemo(
     () => zonas.filter((zona) => zona.fincaId === selectedFincaId),
     [zonas, selectedFincaId]
   );
 
+  // Garantiza que haya una finca seleccionada por defecto cuando cargan las fincas
   React.useEffect(() => {
     if (!selectedFincaId && fincas[0]?.id) {
       setSelectedFincaId(fincas[0].id);
     }
   }, [fincas, selectedFincaId]);
 
+  // Sanitiza el campo de kilos para aceptar únicamente números y punto decimal
   const handleKilosChange = (value: string) => {
     const onlyNumbers = value.replace(/[^\d.]/g, '');
     setKilosBaba(onlyNumbers);
   };
 
+  // Valida y guarda la nueva cosecha, anuncia por voz, reinicia el formulario y desplaza al historial
   const submitHarvest = (e?: React.FormEvent) => {
     e?.preventDefault();
     setGuardando(true);
@@ -143,11 +159,13 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
     }
   };
 
+  // Actualiza el rendimiento estimado en la calculadora y lo lee mediante el asistente de voz
   const handleCalculateDryYield = () => {
     setRendimientoCalculado(rendimientoSecoEstimado);
     voiceAssistant.speak(`Cálculo listo. De ${kilosBabaNum} kilos en baba podrías obtener aproximadamente ${rendimientoSecoEstimado} kilos en seco.`, true);
   };
 
+  // Inicia la edición en línea de una recolección existente
   const startEdit = (rec: Recoleccion) => {
     setEditingId(rec.id);
     setEditForm({
@@ -157,6 +175,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
     });
   };
 
+  // Valida y persiste los cambios de la recolección editada
   const saveEdit = () => {
     if (!editingId) return;
     const kilos = Number(editForm.kilosBaba) || 0;
@@ -172,14 +191,17 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
     setEditingId(null);
   };
 
+  // Cancela la edición en línea activa
   const cancelEdit = () => setEditingId(null);
 
+  // Abre el formulario para registrar los kilos secos reales al finalizar el proceso
   const startFinalize = (rec: Recoleccion) => {
     setFinalizingId(rec.id);
     setKilosSecoFinales(rec.kilosSecoObtenidos ? String(rec.kilosSecoObtenidos) : String(rec.rendimientoEstimadoSeco));
     setNotasFinalizacion(rec.notas || '');
   };
 
+  // Guarda los kilos secos finales y cambia el estado a 'seco_listo'
   const saveFinalize = () => {
     if (!finalizingId) return;
     const kilosSeco = Number(kilosSecoFinales) || 0;
@@ -196,12 +218,14 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
     setNotasFinalizacion('');
   };
 
+  // Cierra el panel de finalización limpiando sus campos temporales
   const cancelFinalize = () => {
     setFinalizingId(null);
     setKilosSecoFinales('');
     setNotasFinalizacion('');
   };
 
+  // Valida el paso actual antes de avanzar al siguiente paso del asistente
   const handleNext = () => {
     if (step === 1 && !selectedFincaId) {
       voiceAssistant.speak('Selecciona una finca.', true);
@@ -220,6 +244,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12 animate-fadeIn">
+      {/* Encabezado del módulo de recolección con ayuda por voz */}
       <div className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
           <div>
@@ -238,6 +263,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
         </div>
       </div>
 
+      {/* Indicador visual de progreso de los 4 pasos */}
       <div className="grid grid-cols-4 gap-2 text-center">
         {[
           '1. Finca',
@@ -263,8 +289,10 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
         })}
       </div>
 
+      {/* Contenedor del formulario guiado por pasos */}
       <div className="bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-6 shadow-sm">
         <form onSubmit={submitHarvest} className="space-y-6">
+          {/* Mensajes de validación, éxito, guardado en curso y contador de sesión */}
           {guardadoError && (
             <div className="p-3 rounded-2xl border border-red-300 bg-red-50 text-red-900 font-bold">
               {guardadoError}
@@ -283,6 +311,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
           <div className="text-xs font-bold text-stone-500">
             Guardados en esta sesión: {guardadosHoy}
           </div>
+          {/* Paso 1: selección de finca, modo de registro (finca completa o lote) y zona */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between bg-stone-50 p-4 rounded-2xl border border-stone-200">
@@ -376,6 +405,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Paso 2: ingreso de kilos en baba y calculadora de rendimiento en seco */}
           {step === 2 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
               <div className="bg-amber-50 p-5 rounded-3xl border-2 border-amber-300 space-y-3">
@@ -432,6 +462,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Paso 3: jornales utilizados, responsable y observaciones */}
           {step === 3 && (
             <div className="space-y-4">
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
@@ -474,6 +505,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Paso 4: resumen de verificación previo al guardado */}
           {step === 4 && (
             <div className="space-y-4">
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
@@ -508,6 +540,7 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
             </div>
           )}
 
+          {/* Botones de navegación entre pasos y guardado final */}
           <div className="flex items-center justify-between pt-4 border-t border-stone-200">
             {step > 1 ? (
               <button
@@ -545,12 +578,14 @@ export const RecoleccionView: React.FC<RecoleccionViewProps> = ({
         </form>
       </div>
 
+      {/* Sección de historial de recolecciones con edición en línea y finalización */}
       <div ref={historialRef} id="historial-recolecciones" className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-black text-stone-900">Historial de recolecciones</h3>
           <VoiceHelpButton textToRead="Historial de recolecciones. Aquí puedes editar los registros guardados." size="sm" />
         </div>
 
+        {/* Tarjeta destacada con el último registro guardado en la sesión */}
         {ultimoGuardado && (
           <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4 text-emerald-950">
             <p className="text-xs font-black uppercase tracking-wide text-emerald-700">Último registro guardado</p>

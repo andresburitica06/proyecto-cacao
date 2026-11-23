@@ -1,3 +1,17 @@
+/**
+ * Servidor API REST de AppCacao (Express + MySQL + JWT).
+ *
+ * Responsabilidades principales:
+ * - Cargar variables de entorno desde `.env` y validar la configuración obligatoria.
+ * - Configurar el pool de conexiones MySQL, Express y CORS.
+ * - Proveer autenticación con JWT, control de rol administrador y validación de
+ *   acceso por finca (`usuario_finca`).
+ * - Exponer los endpoints CRUD/transaccionales para usuarios, fincas, zonas de
+ *   cultivo, recolecciones, inventario, clientes compradores, ventas, caja diaria
+ *   y estado persistente del espacio de trabajo.
+ * - Inicializar tablas/columnas auxiliares y el usuario administrador por defecto
+ *   al arrancar el servidor.
+ */
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
@@ -8,6 +22,9 @@ import type { RowDataPacket } from 'mysql2/promise';
 import fs from 'node:fs';
 import path from 'node:path';
 
+// -----------------------------------------------------------------------------
+// Carga manual de variables de entorno desde el archivo `.env` en la raíz
+// -----------------------------------------------------------------------------
 const envPath = path.resolve(process.cwd(), '.env');
 if (fs.existsSync(envPath)) {
   const envFile = fs.readFileSync(envPath, 'utf8');
@@ -23,23 +40,46 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+// Validación de variables obligatorias antes de crear el pool de base de datos
 const required = ['DB_HOST', 'DB_NAME', 'DB_USER', 'JWT_SECRET'] as const;
 for (const key of required) if (!process.env[key]) throw new Error(`Falta ${key} en .env`);
 
+// -----------------------------------------------------------------------------
+// Configuración del pool de conexiones MySQL y la aplicación Express
+// -----------------------------------------------------------------------------
 const pool = mysql.createPool({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 3306), database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD, waitForConnections: true, connectionLimit: 10 });
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// -----------------------------------------------------------------------------
+// Autenticación (JWT) y middlewares de autorización
+// -----------------------------------------------------------------------------
+
+/** Extensión de Request de Express que incluye la identidad del usuario autenticado. */
 type AuthRequest = Request & { user?: { id: number; rol: string } };
+
+/** Firma un token JWT con el identificador y rol del usuario (vigencia de 8 horas). */
 const sign = (id: number, rol: string) => jwt.sign({ id, rol }, process.env.JWT_SECRET!, { expiresIn: '8h' });
+
+/**
+ * Middleware de autenticación: verifica el encabezado `Authorization: Bearer <token>`,
+ * decodifica el JWT y adjunta `req.user`. Responde 401 si falta o es inválido.
+ */
 const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'Sesión requerida.' });
   try { req.user = jwt.verify(token, process.env.JWT_SECRET!) as { id: number; rol: string }; next(); }
   catch { return res.status(401).json({ message: 'Sesión inválida.' }); }
 };
+
+/** Middleware de autorización: restringe el acceso exclusivamente al rol `admin` (403 en caso contrario). */
 const admin = (req: AuthRequest, res: Response, next: NextFunction) => req.user?.rol === 'admin' ? next() : res.status(403).json({ message: 'Acceso exclusivo de administrador.' });
+
+/**
+ * Verifica si el usuario autenticado puede acceder a una finca determinada.
+ * Los administradores tienen acceso total; el resto debe estar vinculado en `usuario_finca`.
+ */
 const canAccessFinca = async (req: AuthRequest, fincaId: number) => {
   if (req.user?.rol === 'admin') return true;
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -49,6 +89,11 @@ const canAccessFinca = async (req: AuthRequest, fincaId: number) => {
   return rows.length > 0;
 };
 
+// -----------------------------------------------------------------------------
+// Funciones auxiliares de preparación y mantenimiento de esquema al iniciar
+// -----------------------------------------------------------------------------
+
+/** Garantiza que exista la tabla `estado_aplicacion` para persistir el estado JSON del workspace. */
 const ensureWorkspaceStateTable = async () => {
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS estado_aplicacion (
@@ -59,10 +104,12 @@ const ensureWorkspaceStateTable = async () => {
   `);
 };
 
+/** Elimina la clave heredada global `workspace_state` (ahora se almacena por usuario). */
 const cleanupLegacyWorkspaceState = async () => {
   await pool.execute('DELETE FROM estado_aplicacion WHERE clave = ?', ['workspace_state']);
 };
 
+/** Asegura que `clientes_compradores` tenga la columna `id_usuario_registra` para aislar compradores por usuario. */
 const ensureBuyerOwnershipColumn = async () => {
   const [columns] = await pool.query<RowDataPacket[]>(
     `SELECT 1 FROM information_schema.COLUMNS
@@ -76,11 +123,25 @@ const ensureBuyerOwnershipColumn = async () => {
   }
 };
 
+// -----------------------------------------------------------------------------
+// Endpoints de salud y autenticación
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/health
+ * Comprueba la conectividad con la base de datos ejecutando `SELECT 1`.
+ */
 app.get('/api/health', async (_req, res) => {
   try { await pool.query('SELECT 1'); res.json({ ok: true, database: 'connected' }); }
   catch { res.status(503).json({ ok: false, database: 'unavailable' }); }
 });
 
+/**
+ * POST /api/auth/register
+ * Registra un nuevo productor junto con su primera finca y su relación en `usuario_finca`
+ * dentro de una transacción atómica. Valida campos obligatorios, longitud mínima de
+ * contraseña (4 caracteres) y controla cédulas duplicadas (HTTP 409).
+ */
 app.post('/api/auth/register', async (req, res) => {
   const { cedula, nombreCompleto, telefono, password, nombreFinca, municipio = 'Por completar' } = req.body;
   if (![cedula, nombreCompleto, password, nombreFinca].every((value: unknown) => typeof value === 'string' && value.trim()) || password.length < 4) return res.status(400).json({ message: 'Completa los datos requeridos. La contraseña debe tener mínimo 4 caracteres.' });
@@ -101,6 +162,11 @@ app.post('/api/auth/register', async (req, res) => {
   finally { connection.release(); }
 });
 
+/**
+ * POST /api/auth/login
+ * Autentica un usuario activo mediante cédula y contraseña (bcrypt) y devuelve
+ * el token JWT junto con sus datos básicos y su finca asociada.
+ */
 app.post('/api/auth/login', async (req, res) => {
   const { cedula, password } = req.body;
   const [rows] = await pool.execute<(RowDataPacket & { id_usuario: number; password_hash: string; rol: string; nombre_completo: string; id_finca: number | null; finca_nombre: string | null })[]>('SELECT u.id_usuario,u.password_hash,u.rol,u.nombre_completo,uf.id_finca,f.nombre AS finca_nombre FROM usuarios u LEFT JOIN usuario_finca uf ON uf.id_usuario=u.id_usuario LEFT JOIN fincas f ON f.id_finca=uf.id_finca WHERE u.cedula=? AND u.activo=1 LIMIT 1', [cedula]);
@@ -109,6 +175,15 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token: sign(user.id_usuario, user.rol), user: { id: user.id_usuario, rol: user.rol, nombreCompleto: user.nombre_completo, fincaId: user.id_finca, fincaNombre: user.finca_nombre } });
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints administrativos de gestión de usuarios/clientes del sistema
+// -----------------------------------------------------------------------------
+
+/**
+ * POST /api/clientes/:id/password
+ * Permite únicamente al administrador restablecer la contraseña de un usuario no admin.
+ * Valida ID numérico entero positivo y longitud mínima de contraseña (4 caracteres).
+ */
 app.post('/api/clientes/:id/password', auth, admin, async (req, res) => {
   const userId = Number(req.params.id);
   const { password } = req.body;
@@ -120,11 +195,25 @@ app.post('/api/clientes/:id/password', auth, admin, async (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * GET /api/clientes
+ * Lista todos los usuarios productores/no administradores junto con su finca asociada
+ * (acceso exclusivo de administrador).
+ */
 app.get('/api/clientes', auth, admin, async (_req, res) => {
   const [rows] = await pool.query('SELECT u.id_usuario,u.cedula,u.nombre_completo,u.telefono,f.id_finca,f.nombre AS finca FROM usuarios u LEFT JOIN usuario_finca uf ON uf.id_usuario=u.id_usuario LEFT JOIN fincas f ON f.id_finca=uf.id_finca WHERE u.rol <> \'admin\' ORDER BY u.nombre_completo');
   res.json(rows);
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de fincas (CRUD con control de acceso por usuario y borrado lógico)
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/fincas
+ * Lista las fincas activas visibles para el usuario autenticado
+ * (todas si es `admin`; solo las vinculadas en `usuario_finca` si es productor).
+ */
 app.get('/api/fincas', auth, async (req: AuthRequest, res) => {
   const query = req.user!.rol === 'admin'
     ? 'SELECT f.* FROM fincas f WHERE f.activa = 1 ORDER BY f.id_finca'
@@ -139,6 +228,12 @@ app.get('/api/fincas', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/fincas
+ * Crea una nueva finca y la asocia al usuario autenticado como `propietario`
+ * en una transacción. Valida campos obligatorios y que las hectáreas de cacao
+ * no superen las hectáreas totales.
+ */
 app.post('/api/fincas', auth, async (req: AuthRequest, res) => {
   const body = req.body?.finca && typeof req.body.finca === 'object' ? req.body.finca : req.body;
   console.log('[POST /api/fincas] body recibido:', JSON.stringify(body));
@@ -185,6 +280,11 @@ app.post('/api/fincas', auth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * PUT /api/fincas/:id
+ * Actualiza los datos de una finca existente preservando campos textuales si
+ * llegan vacíos. Valida ID, consistencia de hectáreas y permisos con `canAccessFinca`.
+ */
 app.put('/api/fincas/:id', auth, async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   const body = req.body?.finca && typeof req.body.finca === 'object' ? req.body.finca : req.body;
@@ -221,6 +321,10 @@ app.put('/api/fincas/:id', auth, async (req: AuthRequest, res) => {
   res.json((rows as unknown[])[0]);
 });
 
+/**
+ * DELETE /api/fincas/:id
+ * Desactiva lógicamente una finca (`activa = 0`) respetando el alcance del usuario.
+ */
 app.delete('/api/fincas/:id', auth, async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Finca inválida.' });
@@ -231,6 +335,15 @@ app.delete('/api/fincas/:id', auth, async (req: AuthRequest, res) => {
   res.status(204).send();
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de zonas de cultivo / lotes
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/zonas
+ * Lista las zonas de cultivo activas (con filtro opcional `?fincaId=`),
+ * restringiendo los resultados a las fincas permitidas para el usuario.
+ */
 app.get('/api/zonas', auth, async (req: AuthRequest, res) => {
   const fincaId = req.query.fincaId ? Number(req.query.fincaId) : null;
   if (fincaId !== null && (!Number.isInteger(fincaId) || fincaId <= 0)) {
@@ -255,6 +368,11 @@ app.get('/api/zonas', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/zonas
+ * Registra un nuevo lote en `zonas_cultivo` tras validar campos requeridos
+ * y permisos de acceso a la finca indicada.
+ */
 app.post('/api/zonas', auth, async (req: AuthRequest, res) => {
   const { fincaId, nombreZona, variedadCacao, arbolesEstimados = 0, hectareas = 0, anoSiembra } = req.body;
   if (![nombreZona, variedadCacao].every((value: unknown) => typeof value === 'string' && value.trim()) || !Number.isInteger(Number(fincaId))) {
@@ -271,6 +389,10 @@ app.post('/api/zonas', auth, async (req: AuthRequest, res) => {
   res.status(201).json((rows as RowDataPacket[])[0]);
 });
 
+/**
+ * PUT /api/zonas/:id
+ * Actualiza los datos de un lote verificando previamente su existencia y propiedad.
+ */
 app.put('/api/zonas/:id', auth, async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   const { nombreZona, variedadCacao, arbolesEstimados = 0, hectareas = 0, anoSiembra } = req.body;
@@ -291,6 +413,10 @@ app.put('/api/zonas/:id', auth, async (req: AuthRequest, res) => {
   res.json((rows as RowDataPacket[])[0]);
 });
 
+/**
+ * DELETE /api/zonas/:id
+ * Desactiva lógicamente un lote (`activa = 0`) si pertenece a una finca accesible.
+ */
 app.delete('/api/zonas/:id', auth, async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   const [owned] = await pool.execute<RowDataPacket[]>(
@@ -306,6 +432,15 @@ app.delete('/api/zonas/:id', auth, async (req: AuthRequest, res) => {
   res.status(204).send();
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de recolecciones / cosechas
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/recolecciones
+ * Lista el historial de recolecciones ordenado por fecha descendente, con filtro
+ * opcional `?fincaId=` y alcance según el rol del usuario.
+ */
 app.get('/api/recolecciones', auth, async (req: AuthRequest, res) => {
   const fincaId = req.query.fincaId ? Number(req.query.fincaId) : null;
   let sql: string;
@@ -327,6 +462,11 @@ app.get('/api/recolecciones', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/recolecciones
+ * Registra una nueva recolección de cacao en baba. Valida finca, kilos > 0 y
+ * acceso a la finca; si no se envía rendimiento estimado seco, calcula el 38%.
+ */
 app.post('/api/recolecciones', auth, async (req: AuthRequest, res) => {
   const body = req.body;
   const kilosBaba = Number(body.kilosBaba);
@@ -349,6 +489,11 @@ app.post('/api/recolecciones', auth, async (req: AuthRequest, res) => {
   res.status(201).json((rows as RowDataPacket[])[0]);
 });
 
+/**
+ * PUT /api/recolecciones/:id
+ * Actualiza los datos y el estado de proceso de una recolección existente
+ * perteneciente a una finca accesible para el usuario.
+ */
 app.put('/api/recolecciones/:id', auth, async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   const body = req.body;
@@ -371,6 +516,15 @@ app.put('/api/recolecciones/:id', auth, async (req: AuthRequest, res) => {
   res.json((rows as RowDataPacket[])[0]);
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de inventario
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/inventario
+ * Lista las existencias de inventario ordenadas por última actualización,
+ * filtradas por las fincas asignadas al usuario (o todas si es `admin`).
+ */
 app.get('/api/inventario', auth, async (req: AuthRequest, res) => {
   const [rows] = req.user!.rol === 'admin'
     ? await pool.query('SELECT * FROM inventarios ORDER BY fecha_ultima_actualizacion DESC')
@@ -382,6 +536,11 @@ app.get('/api/inventario', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/inventario
+ * Registra o acumula inventario (`INSERT ... ON DUPLICATE KEY UPDATE`) por finca,
+ * tipo de producto, estado de calidad y ubicación de bodega, validando acceso a la finca.
+ */
 app.post('/api/inventario', auth, async (req: AuthRequest, res) => {
   const body = req.body;
   if (!(await canAccessFinca(req, Number(body.fincaId)))) {
@@ -404,6 +563,11 @@ app.post('/api/inventario', auth, async (req: AuthRequest, res) => {
   res.status(201).json(rows[0]);
 });
 
+/**
+ * PUT /api/inventario/:id
+ * Actualiza cantidad disponible, precio de referencia, nombre y ubicación de un
+ * registro de inventario perteneciente a una finca accesible por el usuario.
+ */
 app.put('/api/inventario/:id', auth, async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   const body = req.body;
@@ -424,6 +588,14 @@ app.put('/api/inventario/:id', auth, async (req: AuthRequest, res) => {
   res.json((rows as RowDataPacket[])[0]);
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de clientes compradores
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/clientes-compradores
+ * Lista los compradores registrados por el usuario actual (o todos si es `admin`).
+ */
 app.get('/api/clientes-compradores', auth, async (req: AuthRequest, res) => {
   const [rows] = req.user!.rol === 'admin'
     ? await pool.query('SELECT * FROM clientes_compradores ORDER BY nombre')
@@ -431,6 +603,11 @@ app.get('/api/clientes-compradores', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/clientes-compradores
+ * Registra un nuevo cliente comprador asociado al usuario autenticado.
+ * Valida nombre obligatorio y genera un documento temporal si no se suministra.
+ */
 app.post('/api/clientes-compradores', auth, async (req: AuthRequest, res) => {
   const { documento, nombre, telefono, tipoCliente = 'particular', municipio } = req.body;
   if (!nombre?.trim()) return res.status(400).json({ message: 'El nombre del cliente es obligatorio.' });
@@ -442,6 +619,15 @@ app.post('/api/clientes-compradores', auth, async (req: AuthRequest, res) => {
   res.status(201).json((rows as RowDataPacket[])[0]);
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de ventas (con transacción de inventario, kardex y caja diaria)
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/ventas
+ * Lista el historial de ventas ordenado por fecha descendente, filtrado según
+ * las fincas a las que tiene acceso el usuario.
+ */
 app.get('/api/ventas', auth, async (req: AuthRequest, res) => {
   const [rows] = req.user!.rol === 'admin'
     ? await pool.query('SELECT * FROM ventas ORDER BY fecha_venta DESC,id_venta DESC')
@@ -453,6 +639,15 @@ app.get('/api/ventas', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/ventas
+ * Registra una venta de cacao de forma transaccional:
+ * 1. Valida finca, kilos > 0, precio >= 0 y permisos sobre la finca.
+ * 2. Comprueba disponibilidad suficiente en `inventarios`.
+ * 3. Inserta la venta, descuenta el stock y registra la salida en `movimientos_inventario`.
+ * 4. Crea u obtiene la caja diaria de la fecha, la vincula a la venta y, si está pagada,
+ *    registra el ingreso correspondiente en `movimientos_caja`.
+ */
 app.post('/api/ventas', auth, async (req: AuthRequest, res) => {
   const body = req.body;
   const kilos = Number(body.kilosVendidos);
@@ -527,6 +722,15 @@ app.post('/api/ventas', auth, async (req: AuthRequest, res) => {
   }
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de movimientos de caja diaria
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/movimientos-caja
+ * Consulta los ingresos y egresos de caja (con filtro opcional `?fincaId=`),
+ * incluyendo fecha de caja y finca, acotados por permisos del usuario.
+ */
 app.get('/api/movimientos-caja', auth, async (req: AuthRequest, res) => {
   const fincaId = req.query.fincaId ? Number(req.query.fincaId) : null;
   let sql: string;
@@ -552,6 +756,12 @@ app.get('/api/movimientos-caja', auth, async (req: AuthRequest, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/movimientos-caja
+ * Registra un movimiento manual de ingreso o egreso en la caja diaria de la finca
+ * para la fecha indicada (creando la caja si aún no existe). Valida finca, monto > 0
+ * y acceso a la finca.
+ */
 app.post('/api/movimientos-caja', auth, async (req: AuthRequest, res) => {
   const body = req.body;
   const monto = Number(body.monto);
@@ -576,6 +786,14 @@ app.post('/api/movimientos-caja', auth, async (req: AuthRequest, res) => {
   res.status(201).json((rows as RowDataPacket[])[0]);
 });
 
+// -----------------------------------------------------------------------------
+// Endpoints de estado persistente del espacio de trabajo (workspace)
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/state
+ * Recupera el estado JSON persistido para el usuario autenticado (`workspace_state:<id>`).
+ */
 app.get('/api/state', auth, async (req: AuthRequest, res) => {
   const [rows] = await pool.query<RowDataPacket[]>('SELECT payload FROM estado_aplicacion WHERE clave = ? LIMIT 1', [`workspace_state:${req.user!.id}`]);
   if (rows.length === 0) return res.json({});
@@ -587,6 +805,10 @@ app.get('/api/state', auth, async (req: AuthRequest, res) => {
   return res.json(payload);
 });
 
+/**
+ * PUT /api/state
+ * Guarda o actualiza el estado JSON del espacio de trabajo del usuario autenticado.
+ */
 app.put('/api/state', auth, async (req: AuthRequest, res) => {
   await pool.execute(
     'INSERT INTO estado_aplicacion (clave, payload) VALUES (?, ?) ON DUPLICATE KEY UPDATE payload = VALUES(payload)',
@@ -595,8 +817,14 @@ app.put('/api/state', auth, async (req: AuthRequest, res) => {
   res.json({ ok: true });
 });
 
+// -----------------------------------------------------------------------------
+// Manejo global de errores y secuencia de arranque del servidor
+// -----------------------------------------------------------------------------
+
+/** Middleware global de errores no controlados: registra el detalle y responde HTTP 500. */
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => { console.error(error); res.status(500).json({ message: 'Error interno del servidor.' }); });
 
+/** Crea la cuenta de administrador por defecto (`admin` / `admin123`) si aún no existe. */
 const ensureDefaultAdmin = async () => {
   const [rows] = await pool.query<RowDataPacket[]>('SELECT id_usuario FROM usuarios WHERE cedula = \'admin\' LIMIT 1');
   if (rows.length > 0) return;
@@ -605,6 +833,7 @@ const ensureDefaultAdmin = async () => {
   await pool.execute('INSERT INTO usuarios (cedula,nombre_completo,telefono,password_hash,rol) VALUES (?,?,?,?,\'admin\')', ['admin', 'Administrador ADSO', null, passwordHash]);
 };
 
+/** Ejecuta las tareas de inicialización en base de datos y levanta el servidor HTTP. */
 const startServer = async () => {
   await ensureWorkspaceStateTable();
   await ensureBuyerOwnershipColumn();
@@ -613,6 +842,7 @@ const startServer = async () => {
   app.listen(Number(process.env.PORT || 3001), () => console.log(`API lista en http://localhost:${process.env.PORT || 3001}/api`));
 };
 
+// Arranque principal: finaliza el proceso con código 1 si falla la inicialización
 startServer().catch((error) => {
   console.error(error);
   process.exit(1);
