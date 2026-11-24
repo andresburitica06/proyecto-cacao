@@ -219,6 +219,7 @@ export default function App() {
         kilosBaba: Number(row.kilos_baba),
         rendimientoEstimadoSeco: Number(row.rendimiento_estimado_seco),
         kilosSecoObtenidos: row.kilos_seco_obtenidos ? Number(row.kilos_seco_obtenidos) : undefined,
+        kilosMalEstado: Number(row.kilos_mal_estado || 0),
         estadoProceso: row.estado_proceso === 'merma_mal_estado' ? 'seco_listo' : row.estado_proceso,
         jornalesUtilizados: Number(row.jornales_utilizados),
         responsable: row.responsable,
@@ -294,7 +295,7 @@ export default function App() {
         setFincas(rows.map((row) => ({
           id: String(row.id_finca),
           nombre: row.nombre,
-          propietario: row.propietario || 'Sin propietario',
+          propietario: row.propietario || currentUser.nombreCompleto || 'Sin propietario',
           vereda: row.vereda || 'Por completar',
           municipio: row.municipio || 'Por completar',
           hectareasTotal: Number(row.hectareas_total),
@@ -353,6 +354,13 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setAuthToken('');
+    setFincas([]);
+    setZonas([]);
+    setRecolecciones([]);
+    setInventario([]);
+    setClientes([]);
+    setVentas([]);
+    setCaja([]);
     setActiveTab('auth');
   };
 
@@ -373,7 +381,7 @@ export default function App() {
   const mapApiFinca = (row: Awaited<ReturnType<typeof fetchFincas>>[number]): Finca => ({
     id: String(row.id_finca),
     nombre: row.nombre,
-    propietario: row.propietario || 'Sin propietario',
+    propietario: row.propietario || currentUser?.nombreCompleto || 'Sin propietario',
     vereda: row.vereda || 'Por completar',
     municipio: row.municipio || 'Por completar',
     hectareasTotal: Number(row.hectareas_total),
@@ -450,11 +458,12 @@ export default function App() {
     try {
       const row = await createRecoleccion(authToken, {
         fincaId: Number(newRecData.fincaId),
-        zonaId: newRecData.zonaId === 'finca-general' ? null : Number(newRecData.zonaId),
+        zonaId: Number.isInteger(Number(newRecData.zonaId)) ? Number(newRecData.zonaId) : null,
         fecha: newRecData.fecha,
         kilosBaba: newRecData.kilosBaba,
         rendimientoEstimadoSeco: newRecData.rendimientoEstimadoSeco,
         kilosSecoObtenidos: newRecData.kilosSecoObtenidos,
+        kilosMalEstado: newRecData.kilosMalEstado || 0,
         estadoProceso: newRecData.estadoProceso,
         tecnificada: false,
         jornalesUtilizados: newRecData.jornalesUtilizados,
@@ -469,11 +478,26 @@ export default function App() {
         kilosBaba: Number(row.kilos_baba),
         rendimientoEstimadoSeco: Number(row.rendimiento_estimado_seco),
         kilosSecoObtenidos: row.kilos_seco_obtenidos ? Number(row.kilos_seco_obtenidos) : undefined,
+        kilosMalEstado: Number(row.kilos_mal_estado || 0),
         estadoProceso: row.estado_proceso === 'merma_mal_estado' ? 'seco_listo' : row.estado_proceso,
         jornalesUtilizados: Number(row.jornales_utilizados),
         responsable: row.responsable,
         notas: row.notas || undefined
       }, ...(Array.isArray(prev) ? prev : [])]);
+      const invRows = await fetchInventario(authToken);
+      setInventario(invRows.map((inv) => ({
+        id: String(inv.id_inventario),
+        fincaId: String(inv.id_finca),
+        tipoProducto: inv.codigo_tipo_producto,
+        nombreProducto: inv.nombre_producto,
+        cantidadKg: Number(inv.cantidad_kg),
+        cantidadRecolectadaKg: Number(inv.cantidad_recolectada_kg),
+        cantidadVendidaKg: Number(inv.cantidad_vendida_kg),
+        estadoCalidad: inv.estado_calidad,
+        precioRefKg: Number(inv.precio_ref_kg),
+        ubicacionBodega: inv.ubicacion_bodega,
+        fechaUltimaActualizacion: String(inv.fecha_ultima_actualizacion).slice(0, 10)
+      })));
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'No fue posible guardar la cosecha.');
     }
@@ -490,6 +514,7 @@ export default function App() {
         kilosBaba: updated.kilosBaba,
         rendimientoEstimadoSeco: updated.rendimientoEstimadoSeco,
         kilosSecoObtenidos: updated.kilosSecoObtenidos,
+        kilosMalEstado: updated.kilosMalEstado || 0,
         estadoProceso: updated.estadoProceso,
         tecnificada: false,
         jornalesUtilizados: updated.jornalesUtilizados,
@@ -747,13 +772,14 @@ export default function App() {
   const recoleccionesVisibles = recolecciones;
   const inventarioVisible = inventario;
   const ventasVisibles = ventas;
-  const ventaIdsVisibles = new Set(ventasVisibles.map(venta => venta.id));
-  const cajaVisible = isAdmin ? caja : caja.filter(item => ventaIdsVisibles.has(item.referenciaId || '') || item.registradoPor === currentUser?.nombreCompleto);
+  const cajaVisible = caja;
 
   // Cálculo de totales globales visibles: kilos de cacao seco listo y saldo neto de caja
-  const totalKilosInventario = recoleccionesVisibles
+  const kilosBodega = inventarioVisible.reduce((acc, curr) => acc + curr.cantidadKg, 0);
+  const kilosCosechasListas = recoleccionesVisibles
     .filter((rec) => rec.estadoProceso === 'seco_listo')
     .reduce((acc, curr) => acc + (curr.kilosSecoObtenidos ?? curr.rendimientoEstimadoSeco ?? 0), 0);
+  const totalKilosInventario = inventarioVisible.length > 0 ? kilosBodega : kilosCosechasListas;
   const cajaIngresos = cajaVisible.filter(c => c.tipo === 'ingreso').reduce((a, b) => a + b.monto, 0);
   const cajaEgresos = cajaVisible.filter(c => c.tipo === 'egreso').reduce((a, b) => a + b.monto, 0);
   const cajaSaldoDia = cajaIngresos - cajaEgresos;
@@ -891,6 +917,7 @@ export default function App() {
             onAddFinca={handleAddFinca}
             onUpdateFinca={handleUpdateFinca}
             canAddFinca={true}
+            defaultPropietario={currentUser?.nombreCompleto || ''}
             onAddZona={handleAddZona}
             onDeleteFinca={handleDeleteFinca}
             onDeleteZona={handleDeleteZona}
@@ -904,6 +931,8 @@ export default function App() {
             zonas={zonasVisibles}
             recolecciones={recoleccionesVisibles}
             onAddRecoleccion={handleAddRecoleccion}
+            onGoToFincas={() => setActiveTab('fincas')}
+            defaultResponsable={currentUser?.nombreCompleto || ''}
             onUpdateRecoleccion={handleUpdateRecoleccion}
           />
         )}

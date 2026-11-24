@@ -72,6 +72,7 @@ export interface Recoleccion {
   kilosBaba: number;
   rendimientoEstimadoSeco: number; // ~38-40% de kilosBaba
   kilosSecoObtenidos?: number;
+  kilosMalEstado?: number;
   estadoProceso: EstadoProceso;
   jornalesUtilizados: number;
   responsable: string;

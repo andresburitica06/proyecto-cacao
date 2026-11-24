@@ -110,6 +110,20 @@ const cleanupLegacyWorkspaceState = async () => {
 };
 
 /** Asegura que `clientes_compradores` tenga la columna `id_usuario_registra` para aislar compradores por usuario. */
+/** Asegura que `recolecciones` tenga la columna `kilos_mal_estado` para controlar merma/mal estado. */
+const ensureRecoleccionMalEstadoColumn = async () => {
+  const [columns] = await pool.query<RowDataPacket[]>(
+    `SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'recolecciones'
+       AND COLUMN_NAME = 'kilos_mal_estado' LIMIT 1`
+  );
+  if (columns.length === 0) {
+    await pool.execute(
+      'ALTER TABLE recolecciones ADD COLUMN kilos_mal_estado DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER kilos_seco_obtenidos'
+    );
+  }
+};
+
 const ensureBuyerOwnershipColumn = async () => {
   const [columns] = await pool.query<RowDataPacket[]>(
     `SELECT 1 FROM information_schema.COLUMNS
@@ -150,7 +164,7 @@ app.post('/api/auth/register', async (req, res) => {
     await connection.beginTransaction();
     const hash = await bcrypt.hash(password, 12);
     const [userResult] = await connection.execute<mysql.ResultSetHeader>('INSERT INTO usuarios (cedula,nombre_completo,telefono,password_hash,rol) VALUES (?,?,?,?,\'productor\')', [cedula.trim(), nombreCompleto.trim(), telefono?.trim() || null, hash]);
-    const [farmResult] = await connection.execute<mysql.ResultSetHeader>('INSERT INTO fincas (nombre,municipio,hectareas_total,hectareas_cacao) VALUES (?,?,0,0)', [nombreFinca.trim(), municipio.trim()]);
+    const [farmResult] = await connection.execute<mysql.ResultSetHeader>('INSERT INTO fincas (nombre,propietario,municipio,hectareas_total,hectareas_cacao) VALUES (?,?,?,0,0)', [nombreFinca.trim(), nombreCompleto.trim(), municipio.trim()]);
     await connection.execute('INSERT INTO usuario_finca (id_usuario,id_finca,rol_en_finca) VALUES (?,?,\'propietario\')', [userResult.insertId, farmResult.insertId]);
     await connection.commit();
     res.status(201).json({ token: sign(userResult.insertId, 'productor'), user: { id: userResult.insertId, rol: 'productor', nombreCompleto, fincaId: farmResult.insertId, fincaNombre: nombreFinca.trim() } });
@@ -246,7 +260,11 @@ app.post('/api/fincas', auth, async (req: AuthRequest, res) => {
     codigoPredial, imagen, tecnificada = false, nivelTecnificacion
   } = body || {};
   const nombreNormalizado = String(nombre ?? '').trim();
-  const propietarioNormalizado = String(propietario ?? '').trim();
+  let propietarioNormalizado = String(propietario ?? '').trim();
+  if (!propietarioNormalizado) {
+    const [ownerRows] = await pool.execute<RowDataPacket[]>('SELECT nombre_completo FROM usuarios WHERE id_usuario = ? LIMIT 1', [req.user!.id]);
+    propietarioNormalizado = String(ownerRows[0]?.nombre_completo ?? '').trim();
+  }
   const veredaNormalizada = String(vereda ?? '').trim();
   const municipioNormalizado = String(municipio ?? '').trim();
   if (!nombreNormalizado) return res.status(400).json({ message: 'El nombre de la finca es obligatorio.' });
@@ -476,15 +494,51 @@ app.post('/api/recolecciones', auth, async (req: AuthRequest, res) => {
   if (!(await canAccessFinca(req, Number(body.fincaId)))) {
     return res.status(403).json({ message: 'No tienes acceso a esta finca.' });
   }
+  const [fincaRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT nombre, propietario, municipio, vereda, hectareas_total, hectareas_cacao FROM fincas WHERE id_finca = ? AND activa = 1 LIMIT 1',
+    [Number(body.fincaId)]
+  );
+  const finca = fincaRows[0];
+  const isFilled = (v: unknown) => {
+    const t = String(v ?? '').trim().toLowerCase();
+    return Boolean(t) && t !== 'por completar' && t !== 'sin propietario';
+  };
+  if (
+    !finca || !isFilled(finca.nombre) || !isFilled(finca.propietario) ||
+    !isFilled(finca.municipio) || !isFilled(finca.vereda) ||
+    Number(finca.hectareas_total) <= 0 || Number(finca.hectareas_cacao) <= 0
+  ) {
+    return res.status(400).json({ message: 'Debes completar todos los datos de la finca (propietario, municipio, vereda y hectáreas) antes de registrar una cosecha.' });
+  }
   const [result] = await pool.execute<mysql.ResultSetHeader>(
     `INSERT INTO recolecciones
-     (id_finca,id_zona,id_usuario_registra,fecha_recoleccion,kilos_baba,rendimiento_estimado_seco,kilos_seco_obtenidos,estado_proceso,tecnificada,jornales_utilizados,responsable,notas)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+     (id_finca,id_zona,id_usuario_registra,fecha_recoleccion,kilos_baba,rendimiento_estimado_seco,kilos_seco_obtenidos,kilos_mal_estado,estado_proceso,tecnificada,jornales_utilizados,responsable,notas)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [Number(body.fincaId), body.zonaId ? Number(body.zonaId) : null, req.user!.id, body.fecha || new Date().toISOString().slice(0,10),
-     kilosBaba, Number(body.rendimientoEstimadoSeco || kilosBaba * 0.38), body.kilosSecoObtenidos || null,
+     kilosBaba, Number(body.rendimientoEstimadoSeco ?? kilosBaba), Number(body.kilosSecoObtenidos ?? kilosBaba), Math.max(0, Number(body.kilosMalEstado || 0)),
      body.estadoProceso || 'baba', body.tecnificada ? 1 : 0, Number(body.jornalesUtilizados || 0),
      body.responsable || 'Propietario', body.notas || null]
   );
+  const kilosListos = Number(body.kilosSecoObtenidos ?? kilosBaba);
+  const kilosMalEstado = Math.max(0, Number(body.kilosMalEstado || 0));
+  if (kilosListos > 0) {
+    await pool.execute(
+      `INSERT INTO inventarios
+       (id_finca,codigo_tipo_producto,nombre_producto,estado_calidad,cantidad_recolectada_kg,cantidad_vendida_kg,cantidad_kg,precio_ref_kg,ubicacion_bodega)
+       VALUES (?,?,?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE cantidad_recolectada_kg=cantidad_recolectada_kg+VALUES(cantidad_recolectada_kg), cantidad_kg=cantidad_kg+VALUES(cantidad_kg)`,
+      [Number(body.fincaId), 'cacao_seco_premium', 'Cacao Seco Listo para Venta', 'buen_estado', kilosListos, 0, kilosListos, 0, 'Bodega principal']
+    );
+  }
+  if (kilosMalEstado > 0) {
+    await pool.execute(
+      `INSERT INTO inventarios
+       (id_finca,codigo_tipo_producto,nombre_producto,estado_calidad,cantidad_recolectada_kg,cantidad_vendida_kg,cantidad_kg,precio_ref_kg,ubicacion_bodega)
+       VALUES (?,?,?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE cantidad_recolectada_kg=cantidad_recolectada_kg+VALUES(cantidad_recolectada_kg), cantidad_kg=cantidad_kg+VALUES(cantidad_kg)`,
+      [Number(body.fincaId), 'cacao_seco_corriente', 'Cacao en Mal Estado', 'mal_estado', kilosMalEstado, 0, kilosMalEstado, 0, 'Bodega principal']
+    );
+  }
   const [rows] = await pool.execute('SELECT * FROM recolecciones WHERE id_recoleccion=?', [result.insertId]);
   res.status(201).json((rows as RowDataPacket[])[0]);
 });
@@ -506,8 +560,8 @@ app.put('/api/recolecciones/:id', auth, async (req: AuthRequest, res) => {
   );
   if (owned.length === 0) return res.status(404).json({ message: 'Cosecha no encontrada.' });
   const [result] = await pool.execute<mysql.ResultSetHeader>(
-    `UPDATE recolecciones SET kilos_baba=?,rendimiento_estimado_seco=?,kilos_seco_obtenidos=?,estado_proceso=?,tecnificada=?,jornales_utilizados=?,responsable=?,notas=? WHERE id_recoleccion=?`,
-    [Number(body.kilosBaba), Number(body.rendimientoEstimadoSeco || 0), body.kilosSecoObtenidos || null,
+    `UPDATE recolecciones SET kilos_baba=?,rendimiento_estimado_seco=?,kilos_seco_obtenidos=?,kilos_mal_estado=?,estado_proceso=?,tecnificada=?,jornales_utilizados=?,responsable=?,notas=? WHERE id_recoleccion=?`,
+    [Number(body.kilosBaba), Number(body.rendimientoEstimadoSeco || 0), body.kilosSecoObtenidos ?? null, Math.max(0, Number(body.kilosMalEstado || 0)),
      body.estadoProceso || 'baba', body.tecnificada ? 1 : 0, Number(body.jornalesUtilizados || 0),
      body.responsable || 'Propietario', body.notas || null, id]
   );
@@ -833,10 +887,23 @@ const ensureDefaultAdmin = async () => {
   await pool.execute('INSERT INTO usuarios (cedula,nombre_completo,telefono,password_hash,rol) VALUES (?,?,?,?,\'admin\')', ['admin', 'Administrador ADSO', null, passwordHash]);
 };
 
+/** Rellena el propietario en fincas existentes sin propietario usando el dueño en `usuario_finca`. */
+const ensureFincaPropietario = async () => {
+  await pool.execute(`
+    UPDATE fincas f
+    INNER JOIN usuario_finca uf ON uf.id_finca = f.id_finca AND uf.rol_en_finca = 'propietario'
+    INNER JOIN usuarios u ON u.id_usuario = uf.id_usuario
+    SET f.propietario = u.nombre_completo
+    WHERE f.propietario IS NULL OR TRIM(f.propietario) = ''
+  `);
+};
+
 /** Ejecuta las tareas de inicialización en base de datos y levanta el servidor HTTP. */
 const startServer = async () => {
   await ensureWorkspaceStateTable();
   await ensureBuyerOwnershipColumn();
+  await ensureRecoleccionMalEstadoColumn();
+  await ensureFincaPropietario();
   await cleanupLegacyWorkspaceState();
   await ensureDefaultAdmin();
   app.listen(Number(process.env.PORT || 3001), () => console.log(`API lista en http://localhost:${process.env.PORT || 3001}/api`));
