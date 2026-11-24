@@ -49,7 +49,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const kilosSecoPremium = inventario
     .filter((i) => i.tipoProducto === 'cacao_seco_premium')
     .reduce((acc, curr) => acc + curr.cantidadKg, 0);
-  const kilosBaba = recolecciones.reduce((acc, curr) => acc + curr.kilosBaba, 0);
+  const kilosBaba = recolecciones.reduce((acc, curr) => acc + (curr.kilosSecoObtenidos ?? curr.kilosBaba), 0);
+  const kilosMalEstado = recolecciones.reduce((acc, curr) => acc + (curr.kilosMalEstado || 0), 0);
   const totalVentas = ventas.reduce((acc, curr) => acc + curr.totalVenta, 0);
   const ingresosTotal = caja.filter((m) => m.tipo === 'ingreso').reduce((acc, curr) => acc + curr.monto, 0);
   const egresosTotal = caja.filter((m) => m.tipo === 'egreso').reduce((acc, curr) => acc + curr.monto, 0);
@@ -110,7 +111,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     {
       title: 'Fincas',
       value: `${fincas.length}`,
-      subtitle: `${kilosBaba} Kg baba registrados`,
+      subtitle: `${kilosBaba} Kg listos · ${kilosMalEstado} Kg mal estado`,
       icon: Sprout,
       color: 'emerald'
     },

@@ -71,6 +71,7 @@ export interface ApiRecoleccionRow {
   kilos_baba: number;
   rendimiento_estimado_seco: number;
   kilos_seco_obtenidos: number | null;
+  kilos_mal_estado?: number;
   estado_proceso: 'baba' | 'fermentacion' | 'secado' | 'seco_listo' | 'merma_mal_estado';
   tecnificada: number;
   jornales_utilizados: number;
