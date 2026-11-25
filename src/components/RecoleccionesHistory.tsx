@@ -37,12 +37,12 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
   const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [kilosSecoFinales, setKilosSecoFinales] = useState('');
   const [notasFinalizacion, setNotasFinalizacion] = useState('');
-  const [editForm, setEditForm] = useState({ kilosBaba: '', responsable: '', notas: '' });
+  const [editForm, setEditForm] = useState({ kilosBaba: '', kilosMalEstado: '0', responsable: '', notas: '' });
 
   // Inicia la edición en línea cargando los valores actuales de la recolección
   const startEdit = (rec: Recoleccion) => {
     setEditingId(rec.id);
-    setEditForm({ kilosBaba: String(rec.kilosBaba), responsable: rec.responsable, notas: rec.notas || '' });
+    setEditForm({ kilosBaba: String(rec.kilosSecoObtenidos ?? rec.kilosBaba), kilosMalEstado: String(rec.kilosMalEstado || 0), responsable: rec.responsable, notas: rec.notas || '' });
   };
 
   // Valida y guarda los cambios de la edición recalculando el rendimiento seco estimado (38%)
@@ -53,7 +53,9 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
 
     onUpdateRecoleccion(editingId, {
       kilosBaba: kilos,
-      rendimientoEstimadoSeco: Math.round((kilos * 0.38) * 10) / 10,
+      rendimientoEstimadoSeco: kilos,
+      kilosSecoObtenidos: kilos,
+      kilosMalEstado: Math.max(0, Number(editForm.kilosMalEstado) || 0),
       responsable: editForm.responsable.trim() || 'Propietario',
       notas: editForm.notas
     });
@@ -101,8 +103,8 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
             <tr className="bg-stone-100 border-b-2 border-stone-300 text-stone-700 text-xs font-black uppercase">
               <th className="p-3">Fecha</th>
               <th className="p-3">Finca / Lote</th>
-              <th className="p-3">Kilos</th>
-              <th className="p-3">Seco</th>
+              <th className="p-3">Listo venta</th>
+              <th className="p-3">Mal estado</th>
               <th className="p-3">Jornales</th>
               <th className="p-3">Estado</th>
               <th className="p-3">Responsable</th>
@@ -136,7 +138,7 @@ export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
                           <input type="number" min="1" value={editForm.kilosBaba} onChange={(e) => setEditForm((prev) => ({ ...prev, kilosBaba: e.target.value }))} className="w-24 px-2 py-1 rounded-lg border border-stone-300" />
                         ) : `${rec.kilosBaba} Kg`}
                       </td>
-                      <td className="p-3 text-emerald-800">~{isEditing ? Math.round((Number(editForm.kilosBaba || 0) * 0.38) * 10) / 10 : rec.rendimientoEstimadoSeco} Kg</td>
+                      <td className="p-3 text-rose-700">{isEditing ? (<input type="number" min="0" value={editForm.kilosMalEstado} onChange={(e) => setEditForm((prev) => ({ ...prev, kilosMalEstado: e.target.value }))} className="w-24 px-2 py-1 rounded-lg border border-stone-300" />) : `${rec.kilosMalEstado || 0} Kg`}</td>
                       <td className="p-3">{rec.jornalesUtilizados}</td>
                       <td className="p-3">
                         <span className="px-2.5 py-1 rounded-xl text-xs font-extrabold border bg-amber-100 border-amber-400 text-amber-950">

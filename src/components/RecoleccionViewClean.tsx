@@ -16,6 +16,8 @@ interface RecoleccionViewProps {
   recolecciones: Recoleccion[];
   onAddRecoleccion: (rec: Omit<Recoleccion, 'id'>) => void;
   onUpdateRecoleccion: (id: string, changes: Partial<Omit<Recoleccion, 'id'>>) => void;
+  onGoToFincas?: () => void;
+  defaultResponsable?: string;
 }
 
 /** Etiquetas legibles en español para cada estado del proceso de poscosecha. */
@@ -26,21 +28,42 @@ const STATE_LABELS: Record<EstadoProceso, string> = {
   seco_listo: 'Cacao Seco Listo'
 };
 
+/** Verifica qu? datos obligatorios le faltan a una finca antes de registrar cosechas. */
+const getMissingFincaFields = (finca?: Finca): string[] => {
+  if (!finca) return ['Finca'];
+  const isFilled = (value?: string) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return Boolean(normalized) && normalized !== 'por completar' && normalized !== 'sin propietario';
+  };
+  const missing: string[] = [];
+  if (!isFilled(finca.nombre)) missing.push('Nombre');
+  if (!isFilled(finca.propietario)) missing.push('Propietario');
+  if (!isFilled(finca.municipio)) missing.push('Municipio');
+  if (!isFilled(finca.vereda)) missing.push('Vereda');
+  if (!Number.isFinite(finca.hectareasTotal) || finca.hectareasTotal <= 0) missing.push('Hect?reas totales');
+  if (!Number.isFinite(finca.hectareasCacao) || finca.hectareasCacao <= 0) missing.push('Hect?reas de cacao');
+  return missing;
+};
+
 export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
   fincas,
   zonas,
   recolecciones,
   onAddRecoleccion,
-  onUpdateRecoleccion
+  onUpdateRecoleccion,
+  onGoToFincas,
+  defaultResponsable = ''
 }) => {
   // Estados del asistente paso a paso y campos del formulario de cosecha
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedFincaId, setSelectedFincaId] = useState<string>(fincas[0]?.id || '');
   const [modoRegistro, setModoRegistro] = useState<'finca' | 'zona'>('zona');
   const [selectedZonaId, setSelectedZonaId] = useState<string>('');
-  const [kilosBaba, setKilosBaba] = useState('250');
-  const [jornalesUtilizados, setJornalesUtilizados] = useState('2');
-  const [responsable, setResponsable] = useState('Don Jose Ignacio Gomez');
+  const [kilosBaba, setKilosBaba] = useState('');
+  const [hayMalEstado, setHayMalEstado] = useState(false);
+  const [kilosMalEstado, setKilosMalEstado] = useState('');
+  const [jornalesUtilizados, setJornalesUtilizados] = useState('1');
+  const [responsable, setResponsable] = useState(defaultResponsable);
   const [notas, setNotas] = useState('');
   // Estados de retroalimentación visual al guardar
   const [guardadoExitoso, setGuardadoExitoso] = useState('');
@@ -57,7 +80,19 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
 
   // Conversión numérica de kilos en baba y cálculo estimado de rendimiento seco (~38%)
   const kilosBabaNum = Number(kilosBaba) || 0;
-  const rendimientoCalculado = Math.round((kilosBabaNum * 0.38) * 10) / 10;
+  const kilosMalEstadoNum = hayMalEstado ? Math.max(0, Number(kilosMalEstado) || 0) : 0;
+  const totalCosechadoKg = Math.round((kilosBabaNum + kilosMalEstadoNum) * 10) / 10;
+  const rendimientoCalculado = kilosBabaNum;
+
+  // Finca seleccionada y validaci?n de datos completos antes de registrar cosechas
+  const selectedFinca = useMemo(
+    () => fincas.find((f) => f.id === selectedFincaId),
+    [fincas, selectedFincaId]
+  );
+  const missingFincaFields = useMemo(
+    () => getMissingFincaFields(selectedFinca),
+    [selectedFinca]
+  );
 
   // Filtra los lotes/zonas pertenecientes a la finca seleccionada actualmente
   const zonasDisponibles = useMemo(
@@ -86,6 +121,11 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
       setGuardadoError('Selecciona una finca e ingresa kilos validos antes de guardar.');
       return;
     }
+    if (missingFincaFields.length > 0) {
+      setGuardadoError(`Debes completar todos los datos de la finca antes de registrar una cosecha. Falta: ${missingFincaFields.join(', ')}.`);
+      setStep(1);
+      return;
+    }
 
     setGuardando(true);
 
@@ -96,8 +136,9 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
       fecha: new Date().toISOString().split('T')[0],
       kilosBaba: kilosBabaNum,
       rendimientoEstimadoSeco: rendimientoCalculado,
-      kilosSecoObtenidos: undefined,
-      estadoProceso: 'baba',
+      kilosSecoObtenidos: kilosBabaNum,
+      kilosMalEstado: kilosMalEstadoNum,
+      estadoProceso: 'seco_listo',
       jornalesUtilizados: Number(jornalesUtilizados) || 1,
       responsable: responsable.trim() || 'Propietario',
       notas
@@ -109,6 +150,8 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
       fecha: nuevaRecoleccion.fecha,
       kilosBaba: nuevaRecoleccion.kilosBaba,
       rendimientoEstimadoSeco: nuevaRecoleccion.rendimientoEstimadoSeco,
+      kilosSecoObtenidos: nuevaRecoleccion.kilosSecoObtenidos,
+      kilosMalEstado: nuevaRecoleccion.kilosMalEstado,
       estadoProceso: nuevaRecoleccion.estadoProceso,
       jornalesUtilizados: nuevaRecoleccion.jornalesUtilizados,
       responsable: nuevaRecoleccion.responsable,
@@ -118,11 +161,13 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
     setGuardadosHoy((prev) => prev + 1);
     setGuardadoExitoso('Cosecha guardada correctamente.');
     setStep(1);
-    setKilosBaba('200');
+    setKilosBaba('');
+    setHayMalEstado(false);
+    setKilosMalEstado('');
     setNotas('');
     setEditingId(null);
     setFinalizingId(null);
-    voiceAssistant.speak(`Cosecha guardada. ${kilosBabaNum} kilos en baba registrados.`, true);
+    voiceAssistant.speak(`Cosecha guardada. ${kilosBabaNum} kilos listos para la venta y ${kilosMalEstadoNum} kilos en mal estado registrados.`, true);
     window.requestAnimationFrame(() => historialRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     window.setTimeout(() => setGuardadoExitoso(''), 4000);
     setGuardando(false);
@@ -192,14 +237,23 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
       </div>
 
       {/* Barra interactiva de navegación por pasos (1 a 4) */}
-      <div className="grid grid-cols-4 gap-2 text-center">
-        {['1. Finca', '2. Kilos', '3. Estado', '4. Guardar'].map((label, index) => {
-          const n = (index + 1) as 1 | 2 | 3 | 4;
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {['1. Finca', '2. Kilos y Estado', '3. Guardar'].map((label, index) => {
+          const n = (index + 1) as 1 | 2 | 3;
           return (
             <button
               key={label}
               type="button"
-              onClick={() => setStep(n)}
+              onClick={() => {
+                if (n > 1 && missingFincaFields.length > 0) {
+                  const msg = `Completa todos los datos de la finca antes de continuar. Falta: ${missingFincaFields.join(', ')}.`;
+                  setGuardadoError(msg);
+                  voiceAssistant.speak(msg, true);
+                  return;
+                }
+                setGuardadoError('');
+                setStep(n);
+              }}
               className={`p-2.5 rounded-2xl border-2 font-black text-xs sm:text-base cursor-pointer transition-colors ${step === n ? 'bg-orange-600 text-white border-orange-900' : step > n ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200' : 'bg-stone-100 text-stone-500 border-stone-300 hover:bg-stone-200'}`}
             >
               {label}
@@ -232,10 +286,34 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                   <button key={finca.id} type="button" onClick={() => { setSelectedFincaId(finca.id); setSelectedZonaId(''); }} className={`p-4 rounded-2xl border-2 text-left ${selectedFincaId === finca.id ? 'bg-orange-100 border-orange-500 text-orange-950' : 'bg-white border-stone-200 text-stone-800'}`}>
                     <p className="font-black">{finca.nombre}</p>
                     <p className="text-xs text-stone-600 mt-1">{finca.propietario}</p>
+                    {getMissingFincaFields(finca).length > 0 && (
+                      <span className="inline-block mt-2 text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                        Datos incompletos
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
-              {selectedFincaId && (
+              {selectedFinca && missingFincaFields.length > 0 && (
+                <div className="p-4 rounded-2xl border-2 border-amber-400 bg-amber-50 text-amber-950 space-y-2">
+                  <p className="font-black text-sm sm:text-base">
+                    Completa todos los datos de la finca "{selectedFinca.nombre}" antes de registrar una cosecha.
+                  </p>
+                  <p className="text-xs sm:text-sm font-bold text-amber-900">
+                    Datos pendientes: {missingFincaFields.join(', ')}.
+                  </p>
+                  {onGoToFincas && (
+                    <button
+                      type="button"
+                      onClick={onGoToFincas}
+                      className="mt-1 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-black text-sm"
+                    >
+                      Ir a completar finca
+                    </button>
+                  )}
+                </div>
+              )}
+              {selectedFincaId && missingFincaFields.length === 0 && (
                 <div className="space-y-2">
                   <p className="font-black text-stone-900">Como quieres registrar la cosecha?</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -268,13 +346,14 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
 
           {/* Paso 2: ingreso de kilos en baba y calculadora de rendimiento en seco */}
           {step === 2 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
               <div className="bg-amber-50 p-5 rounded-3xl border-2 border-amber-300 space-y-3">
                 <label className="block text-lg font-black text-amber-950 flex items-center gap-2">
                   <Scale className="w-6 h-6 text-amber-800" />
-                  Kilos pesados en baba
+                  Kilos de cacao listo para la venta
                 </label>
-                <input type="number" min="1" value={kilosBaba} onChange={(e) => handleKilosChange(e.target.value)} className="w-full p-4 rounded-2xl border-2 border-amber-600 bg-white text-3xl font-black text-amber-950" />
+                <input type="number" min="1" step="0.1" placeholder="Ej: 120" value={kilosBaba} onChange={(e) => handleKilosChange(e.target.value)} className="w-full p-4 rounded-2xl border-2 border-amber-600 bg-white text-3xl font-black text-amber-950" />
                 <div className="flex flex-wrap gap-2">
                   {[50, 100, 200, 300, 500].map((num) => (
                     <button key={num} type="button" onClick={() => handleKilosChange(String(num))} className="px-3 py-1.5 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 font-black text-sm border border-amber-400">
@@ -282,30 +361,59 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                     </button>
                   ))}
                 </div>
-                <button type="button" onClick={() => voiceAssistant.speak(`De ${kilosBabaNum} kilos en baba podrías obtener aproximadamente ${rendimientoCalculado} kilos en seco.`, true)} className="w-full px-4 py-3 rounded-2xl bg-amber-700 hover:bg-amber-600 text-white font-black text-base flex items-center justify-center gap-2">
+                <button type="button" onClick={() => voiceAssistant.speak(`Tienes ${kilosBabaNum} kilos listos para la venta y ${kilosMalEstadoNum} kilos en mal estado.`, true)} className="w-full px-4 py-3 rounded-2xl bg-amber-700 hover:bg-amber-600 text-white font-black text-base flex items-center justify-center gap-2">
                   <Calculator className="w-5 h-5" />
                   Calcular
                 </button>
               </div>
               <div className="bg-emerald-900 text-emerald-50 p-5 rounded-3xl border-4 border-emerald-600">
                 <div className="flex items-center justify-between">
-                  <span className="bg-emerald-400 text-emerald-950 font-black text-xs px-2.5 py-1 rounded-full uppercase">Calculadora</span>
-                  <span className="text-xs text-emerald-200">Factor ~38%</span>
+                  <span className="bg-rose-200 text-rose-950 font-black text-xs px-2.5 py-1 rounded-full uppercase">Control de calidad</span>
+                  <span className="text-xs text-emerald-200">Total: {totalCosechadoKg} Kg</span>
                 </div>
-                <p className="text-sm font-medium text-emerald-200 mt-4">Rendimiento estimado</p>
+                <p className="text-sm font-bold text-emerald-100 mt-4">¿Salió cacao en mal estado?</p>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setHayMalEstado(false); setKilosMalEstado(''); }}
+                    className={`py-2.5 px-3 rounded-xl font-black text-sm border-2 transition-colors ${!hayMalEstado ? 'bg-emerald-400 text-emerald-950 border-white' : 'bg-emerald-950/60 text-emerald-100 border-emerald-700 hover:bg-emerald-800'}`}
+                  >
+                    No hay mal estado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHayMalEstado(true)}
+                    className={`py-2.5 px-3 rounded-xl font-black text-sm border-2 transition-colors ${hayMalEstado ? 'bg-rose-400 text-rose-950 border-white' : 'bg-emerald-950/60 text-emerald-100 border-emerald-700 hover:bg-emerald-800'}`}
+                  >
+                    Sí, registrar Kg
+                  </button>
+                </div>
+                {hayMalEstado && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-bold text-rose-200 uppercase">¿Cuántos kilos salieron en mal estado?</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="Ej: 15"
+                      value={kilosMalEstado}
+                      onChange={(e) => setKilosMalEstado(e.target.value.replace(/[^\d.]/g, ''))}
+                      className="w-full mt-1.5 p-3 rounded-2xl border-2 border-rose-400 bg-white text-2xl font-black text-rose-950"
+                    />
+                  </div>
+                )}
                 <div className="bg-emerald-950 mt-3 p-4 rounded-2xl border-2 border-emerald-500 text-center">
-                  <span className="text-4xl font-black text-emerald-200 block">~ {rendimientoCalculado} <span className="text-2xl font-bold">Kg</span></span>
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div><span className="block text-xs text-emerald-200 uppercase font-bold">Listo venta</span><span className="text-2xl font-black text-emerald-200">{kilosBabaNum} Kg</span></div>
+                    <div><span className="block text-xs text-rose-200 uppercase font-bold">Mal estado</span><span className="text-2xl font-black text-rose-300">{kilosMalEstadoNum} Kg</span></div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Paso 3: datos operativos (jornales, responsable y notas) */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
-                <h3 className="font-black text-stone-900">Paso 3: datos rapidos</h3>
-                <p className="text-sm text-stone-600">El registro se guarda como baba. Aqui solo confirmas los datos basicos.</p>
+              </div>
+              <div className="space-y-4">
+                <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
+                  <h3 className="font-black text-stone-900">Datos del estado y registro</h3>
+                <p className="text-sm text-stone-600">El cacao listo se suma al inventario para la venta y el cacao en mal estado queda registrado para control.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="block space-y-2">
@@ -318,20 +426,21 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                 </label>
               </div>
               <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Escribe aqui notas opcionales de la cosecha" className="w-full p-3 rounded-2xl border-2 border-stone-200 font-semibold" rows={3} />
+              </div>
             </div>
           )}
 
-          {/* Paso 4: resumen de confirmación antes de guardar */}
-          {step === 4 && (
+          {/* Paso 3: resumen de confirmación antes de guardar */}
+          {step === 3 && (
             <div className="space-y-4">
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
-                <h3 className="font-black text-stone-900">Paso 4: confirma y guarda</h3>
+                <h3 className="font-black text-stone-900">Paso 3: confirma y guarda</h3>
                 <p className="text-sm text-stone-600">Revisa que todo este correcto antes de guardar.</p>
               </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Kilos baba</span><span className="text-2xl font-black text-orange-950">{kilosBabaNum} Kg</span></div>
-                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Seco estimado</span><span className="text-2xl font-black text-emerald-800">~{rendimientoCalculado} Kg</span></div>
-                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Estado</span><span className="text-sm font-black text-purple-900">{STATE_LABELS.baba}</span></div>
+                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Listo venta</span><span className="text-2xl font-black text-emerald-800">{kilosBabaNum} Kg</span></div>
+                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Mal estado</span><span className="text-2xl font-black text-rose-700">{kilosMalEstadoNum} Kg</span></div>
+                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Estado</span><span className="text-sm font-black text-emerald-900">{STATE_LABELS.seco_listo}</span></div>
                 <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Jornales</span><span className="text-2xl font-black text-stone-900">{jornalesUtilizados}</span></div>
               </div>
               <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas opcionales" className="w-full p-3 rounded-2xl border-2 border-stone-200 font-semibold" rows={3} />
@@ -339,12 +448,14 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
           )}
 
           {/* Botón de envío del formulario */}
-          <div className="flex justify-end pt-4 border-t border-stone-200">
-            <button type="submit" className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5" />
-              Guardar cosecha
-            </button>
-          </div>
+          {step === 3 && (
+            <div className="flex justify-end pt-4 border-t border-stone-200">
+              <button type="submit" disabled={missingFincaFields.length > 0 || kilosBabaNum <= 0} className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed text-white font-black flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5" />
+                Guardar cosecha
+              </button>
+            </div>
+          )}
         </form>
       </div>
 

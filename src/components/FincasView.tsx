@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Vista de gestión de Fincas y Lotes de Cultivo.
  * Permite consultar, crear, editar y eliminar fincas cacaoteras, así como administrar
  * los lotes (zonas de cultivo) asociados a cada finca con soporte de lectura por voz.
@@ -57,6 +57,7 @@ interface FincasViewProps {
   onDeleteFinca: (id: string) => void;
   onDeleteZona: (id: string) => void;
   canAddFinca?: boolean;
+  defaultPropietario?: string;
 }
 
 export const FincasView: React.FC<FincasViewProps> = ({
@@ -65,6 +66,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
   onAddFinca,
   onUpdateFinca,
   canAddFinca = false,
+  defaultPropietario = '',
   onAddZona,
   onDeleteFinca,
   onDeleteZona
@@ -80,7 +82,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
 
   // Estados del formulario para registrar una nueva finca
   const [nombre, setNombre] = useState('');
-  const [propietario, setPropietario] = useState('');
+  const [propietario, setPropietario] = useState(defaultPropietario);
   const [vereda, setVereda] = useState('');
   const [municipio, setMunicipio] = useState('');
   const [hectareasTotal, setHectareasTotal] = useState('5');
@@ -155,7 +157,7 @@ export const FincasView: React.FC<FincasViewProps> = ({
     voiceAssistant.speak(`Finca ${nombreLimpio} guardada exitosamente.`);
     setShowAddFincaModal(false);
     setNombre('');
-    setPropietario('');
+    setPropietario(defaultPropietario);
     setVereda('');
     setMunicipio('');
     setHectareasTotal('5');
@@ -415,7 +417,10 @@ export const FincasView: React.FC<FincasViewProps> = ({
       <div className="flex justify-center pt-2">
         <button
           type="button"
-          onClick={() => setShowAddFincaModal(true)}
+          onClick={() => {
+            if (!propietario.trim() && defaultPropietario) setPropietario(defaultPropietario);
+            setShowAddFincaModal(true);
+          }}
           className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-base flex items-center gap-2 shadow-xl border-2 border-emerald-800 cursor-pointer"
         >
           <Plus className="w-6 h-6 stroke-[3]" />
