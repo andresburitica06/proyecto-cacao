@@ -3,9 +3,9 @@
  * Permite registrar ventas (con ingreso automático a caja), registrar egresos/gastos,
  * administrar clientes compradores y generar tickets o facturas imprimibles en PDF.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, Plus, Printer, CheckCircle2, DollarSign, Calendar, Tag, ShieldCheck } from 'lucide-react';
-import { Finca, Cliente, Venta, MovimientoCaja, TipoProductoCacao, MetodoPago, CategoriaGasto, EstadoCalidad } from '../types';
+import { Finca, Cliente, Venta, MovimientoCaja, TipoProductoCacao, MetodoPago, CategoriaGasto, EstadoCalidad, Recoleccion } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 import { voiceAssistant } from '../services/voiceAssistant';
 
@@ -14,6 +14,7 @@ interface VentasCajaViewProps {
   fincas: Finca[];
   clientes: Cliente[];
   ventas: Venta[];
+  recolecciones?: Recoleccion[];
   caja: MovimientoCaja[];
   onAddVenta: (venta: Omit<Venta, 'id'>) => void;
   onAddGastoCaja: (movimiento: Omit<MovimientoCaja, 'id'>) => void;
@@ -27,6 +28,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   fincas,
   clientes,
   ventas,
+  recolecciones = [],
   caja,
   onAddVenta,
   onAddGastoCaja,
@@ -36,7 +38,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   quickOpenExpenseModal = false
 }) => {
   // Estados de navegación interna (subpestañas) y visibilidad de modales
-  const [subTab, setSubTab] = useState<'ventas_caja' | 'historial_ventas' | 'clientes'>('ventas_caja');
+  const [subTab, setSubTab] = useState<'ventas_caja' | 'historial_ventas' | 'historial_gastos' | 'clientes'>('ventas_caja');
   const [showSaleModal, setShowSaleModal] = useState(quickOpenSaleModal);
   const [showExpenseModal, setShowExpenseModal] = useState(quickOpenExpenseModal);
   const [showAddClienteModal, setShowAddClienteModal] = useState(false);
@@ -46,17 +48,19 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   // Estados del formulario de registro de venta
   const [clienteNombreSale, setClienteNombreSale] = useState<string>(clientes[0]?.nombre || '');
   const [fincaIdSale, setFincaIdSale] = useState<string>(fincas[0]?.id || '');
-  const [tipoProdSale, setTipoProdSale] = useState<TipoProductoCacao>('cacao_seco_premium');
-  const [kilosVendidos, setKilosVendidos] = useState<string>('150');
+  const [selectedRecoleccionId, setSelectedRecoleccionId] = useState<string>('');
+  const [kilosVendidos, setKilosVendidos] = useState<string>('');
   const [precioPorKg, setPrecioPorKg] = useState<string>('22500'); // $22.500 COP
   const [estadoCalidadSale, setEstadoCalidadSale] = useState<EstadoCalidad>('buen_estado');
   const [metodoPago, setMetodoPago] = useState<MetodoPago>('efectivo');
+  const [saleError, setSaleError] = useState<string>('');
 
   // Estados del formulario de registro de gasto/egreso en caja
-  const [conceptoGasto, setConceptoGasto] = useState<string>('Pago 2 Jornales de Recolección');
-  const [montoGasto, setMontoGasto] = useState<string>('160000');
+  const [conceptoGasto, setConceptoGasto] = useState<string>('');
+  const [montoGasto, setMontoGasto] = useState<string>('');
   const [categoriaGasto, setCategoriaGasto] = useState<CategoriaGasto>('pago_jornales');
-  const [registradoPor, setRegistradoPor] = useState<string>('Don Jose Ignacio Gómez');
+  const [selectedJornalRecoleccionId, setSelectedJornalRecoleccionId] = useState<string>('');
+  const [valorPorJornal, setValorPorJornal] = useState<string>('');
 
   // Estados del formulario para agregar un nuevo cliente/comprador
   const [nombreClienteNew, setNombreClienteNew] = useState('');
@@ -78,15 +82,191 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     }
   }, [quickOpenExpenseModal]);
 
+  // Mantiene sincronizada la finca seleccionada cuando cargan las fincas
+  useEffect(() => {
+    if (!fincaIdSale && fincas[0]?.id) {
+      setFincaIdSale(fincas[0].id);
+    }
+  }, [fincas, fincaIdSale]);
+
+  // Cosechas registradas listas para venta de la finca elegida (más recientes primero)
+  const cosechasFincaListas = useMemo(
+    () =>
+      recolecciones
+        .filter((r) => r.estadoProceso === 'seco_listo' && (!fincaIdSale || r.fincaId === fincaIdSale))
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [recolecciones, fincaIdSale]
+  );
+
+  // Disponibilidad por calidad (buen estado y mal estado) para la finca elegida
+  const { disponibleBuenEstado, disponibleMalEstado } = useMemo(() => {
+    const ventasFinca = ventas.filter(
+      (v) => v.estadoVenta !== 'anulada' && (!fincaIdSale || v.fincaId === fincaIdSale)
+    );
+    const cosechadoBuen = cosechasFincaListas.reduce(
+      (acc, r) => acc + (r.kilosSecoObtenidos ?? r.rendimientoEstimadoSeco ?? r.kilosBaba ?? 0),
+      0
+    );
+    const cosechadoMal = cosechasFincaListas.reduce((acc, r) => acc + (r.kilosMalEstado || 0), 0);
+    const vendidoBuen = ventasFinca
+      .filter((v) => (v.estadoCalidad || 'buen_estado') === 'buen_estado')
+      .reduce((acc, v) => acc + (v.kilosVendidos || 0), 0);
+    const vendidoMal = ventasFinca
+      .filter((v) => v.estadoCalidad === 'mal_estado')
+      .reduce((acc, v) => acc + (v.kilosVendidos || 0), 0);
+
+    return {
+      disponibleBuenEstado: Math.max(0, Math.round((cosechadoBuen - vendidoBuen) * 10) / 10),
+      disponibleMalEstado: Math.max(0, Math.round((cosechadoMal - vendidoMal) * 10) / 10)
+    };
+  }, [cosechasFincaListas, ventas, fincaIdSale]);
+
+  // Cosecha elegida en el combo (si se eligió una específica)
+  const selectedRecoleccion = useMemo(
+    () => cosechasFincaListas.find((r) => r.id === selectedRecoleccionId) || null,
+    [cosechasFincaListas, selectedRecoleccionId]
+  );
+
+  // Mantiene válida la cosecha seleccionada cuando cambia la finca o las cosechas
+  useEffect(() => {
+    if (selectedRecoleccionId && !cosechasFincaListas.some((r) => r.id === selectedRecoleccionId)) {
+      setSelectedRecoleccionId('');
+    }
+  }, [cosechasFincaListas, selectedRecoleccionId]);
+
+  // Kilos máximos vendibles según la cosecha elegida (topeados por el disponible real de la finca)
+  const kilosBuenParaVenta = selectedRecoleccion
+    ? Math.min(
+        disponibleBuenEstado,
+        selectedRecoleccion.kilosSecoObtenidos ?? selectedRecoleccion.rendimientoEstimadoSeco ?? selectedRecoleccion.kilosBaba ?? 0
+      )
+    : disponibleBuenEstado;
+  const kilosMalParaVenta = selectedRecoleccion
+    ? Math.min(disponibleMalEstado, selectedRecoleccion.kilosMalEstado || 0)
+    : disponibleMalEstado;
+
+  const disponibleSeleccionado =
+    estadoCalidadSale === 'mal_estado' ? kilosMalParaVenta : kilosBuenParaVenta;
+
+  // Si la calidad elegida no tiene kilos pero la otra sí, cambia automáticamente a la que tiene disponible
+  useEffect(() => {
+    if (estadoCalidadSale === 'buen_estado' && kilosBuenParaVenta <= 0 && kilosMalParaVenta > 0) {
+      setEstadoCalidadSale('mal_estado');
+    } else if (estadoCalidadSale === 'mal_estado' && kilosMalParaVenta <= 0 && kilosBuenParaVenta > 0) {
+      setEstadoCalidadSale('buen_estado');
+    }
+  }, [kilosBuenParaVenta, kilosMalParaVenta, estadoCalidadSale]);
+
+  // Al elegir una cosecha específica o cambiar su calidad, prellena automáticamente los kilos de esa cosecha
+  useEffect(() => {
+    if (selectedRecoleccion) {
+      setKilosVendidos(disponibleSeleccionado > 0 ? String(disponibleSeleccionado) : '');
+    }
+  }, [selectedRecoleccion, estadoCalidadSale, disponibleSeleccionado]);
+
   // Cálculo automático del total de la venta en pesos colombianos (COP)
   const kilosNum = parseFloat(kilosVendidos) || 0;
   const precioNum = parseFloat(precioPorKg) || 0;
   const totalVentaCOP = kilosNum * precioNum;
+  const superaDisponible = kilosNum > disponibleSeleccionado;
 
   // Totales acumulados de la caja diaria (ingresos, egresos y saldo neto)
   const ingresosCaja = caja.filter(c => c.tipo === 'ingreso').reduce((a, b) => a + b.monto, 0);
-  const egresosCaja = caja.filter(c => c.tipo === 'egreso').reduce((a, b) => a + b.monto, 0);
+  const gastosRegistrados = useMemo(
+    () => caja.filter(c => c.tipo === 'egreso').sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [caja]
+  );
+  const egresosCaja = gastosRegistrados.reduce((a, b) => a + b.monto, 0);
   const saldoNetoCaja = ingresosCaja - egresosCaja;
+
+  const categoriaGastoLabels: Record<string, string> = {
+    pago_jornales: 'Pago de Jornales',
+    insumos_fertilizante: 'Insumos y Fertilizantes',
+    transporte_flete: 'Transporte y Fletes',
+    mantenimiento_herramientas: 'Herramientas y Mantenimiento',
+    alimentacion: 'Alimentación Trabajo',
+    otros_gastos: 'Otros Gastos'
+  };
+
+  // Genera una ventana imprimible con el historial completo de gastos
+  const openExpensesPrintWindow = () => {
+    const win = window.open('', '_blank', 'width=900,height=720');
+    if (!win) {
+      window.print();
+      return;
+    }
+    const esc = (v: string) =>
+      v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const fechaReporte = new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
+    const rowsHtml =
+      gastosRegistrados.length === 0
+        ? `<tr><td colspan="5" style="text-align:center;padding:16px;color:#57534e;">No hay gastos registrados.</td></tr>`
+        : gastosRegistrados
+            .map(
+              (g) => `
+              <tr>
+                <td>${esc(g.fecha)}</td>
+                <td>${esc(categoriaGastoLabels[g.categoria] || g.categoria)}</td>
+                <td>${esc(g.concepto)}</td>
+                <td>${esc(g.registradoPor || 'Propietario')}</td>
+                <td style="text-align:right;font-weight:700;color:#be123c;">-${esc(formatCOP(g.monto))}</td>
+              </tr>`
+            )
+            .join('');
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Historial de Gastos</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #1c1917; margin: 28px; }
+    .header { border-bottom: 3px solid #9f1239; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .header h1 { margin: 0; font-size: 22px; color: #881337; }
+    .header p { margin: 4px 0 0; font-size: 12px; color: #57534e; }
+    .total-box { border: 2px solid #e11d48; background: #fff1f2; border-radius: 12px; padding: 12px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border: 1px solid #d6d3d1; padding: 8px 10px; }
+    th { background: #f5f5f4; text-transform: uppercase; font-size: 11px; text-align: left; }
+    tfoot td { background: #ffe4e6; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Historial de Gastos y Egresos</h1>
+      <p>Fecha de reporte: ${esc(fechaReporte)}</p>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:#881337;">AppCacao</div>
+  </div>
+  <div class="total-box">
+    <span style="font-size:12px;font-weight:800;text-transform:uppercase;color:#881337;">Total Gastos Registrados (${gastosRegistrados.length})</span>
+    <span style="font-size:22px;font-weight:900;color:#be123c;">${esc(formatCOP(egresosCaja))}</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Categoría</th>
+        <th>Concepto</th>
+        <th>Registrado por</th>
+        <th style="text-align:right;">Monto</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4">TOTAL EGRESOS</td>
+        <td style="text-align:right;color:#be123c;">${esc(formatCOP(egresosCaja))}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <script>window.onload = () => { window.print(); };</script>
+</body>
+</html>`;
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  };
 
   // Formatea un valor numérico como moneda colombiana (COP) sin decimales
   const formatCOP = (monto: number) => {
@@ -138,7 +318,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
       <tr><td>Comprador</td><td class="right">${clienteFactura}</td></tr>
       <tr><td>Documento</td><td class="right">${cliente?.documento || 'N/A'}</td></tr>
       <tr><td>Finca</td><td class="right">${finca?.nombre || 'General'}</td></tr>
-      <tr><td>Producto</td><td class="right">${venta.tipoProducto}</td></tr>
+      <tr><td>Producto</td><td class="right">${venta.estadoCalidad === 'mal_estado' ? 'Cacao en Mal Estado (Menor Calidad)' : 'Cacao en Buen Estado'}</td></tr>
       <tr><td>Kilos vendidos</td><td class="right">${venta.kilosVendidos} Kg</td></tr>
       <tr><td>Precio por Kg</td><td class="right">${formatCOP(venta.precioPorKg)}</td></tr>
       <tr><td>Método de pago</td><td class="right">${venta.metodoPago}</td></tr>
@@ -161,16 +341,34 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
   // Valida y registra una nueva venta de cacao con comprobante generado y aviso por voz
   const handleRegisterSale = (e: React.FormEvent) => {
     e.preventDefault();
-    if (kilosNum <= 0 || precioNum <= 0) return;
+    setSaleError('');
+    if (!fincaIdSale) {
+      setSaleError('Selecciona una finca antes de registrar la venta.');
+      return;
+    }
+    if (disponibleSeleccionado <= 0) {
+      setSaleError(`No tienes kilos disponibles en ${estadoCalidadSale === 'mal_estado' ? 'mal estado' : 'buen estado'} para esta finca.`);
+      return;
+    }
+    if (kilosNum <= 0 || precioNum <= 0) {
+      setSaleError('Ingresa una cantidad de kilos y un precio por kilo mayores a 0.');
+      return;
+    }
+    if (kilosNum > disponibleSeleccionado) {
+      setSaleError(`Solo tienes ${disponibleSeleccionado} Kg disponibles en ${estadoCalidadSale === 'mal_estado' ? 'mal estado' : 'buen estado'} para esta finca.`);
+      return;
+    }
 
     const clienteNombre = clienteNombreSale.trim();
     const clienteObj = clientes.find(c => c.nombre.toLowerCase() === clienteNombre.toLowerCase());
+    const tipoProductoVenta: TipoProductoCacao =
+      estadoCalidadSale === 'mal_estado' ? 'cacao_seco_corriente' : 'cacao_seco_premium';
     const nuevaVenta = {
       clienteId: clienteObj?.id || `cli-venta-${Date.now()}`,
       clienteNombre,
       fincaId: fincaIdSale,
       fecha: new Date().toISOString().split('T')[0],
-      tipoProducto: tipoProdSale,
+      tipoProducto: tipoProductoVenta,
       kilosVendidos: kilosNum,
       precioPorKg: precioNum,
       totalVenta: totalVentaCOP,
@@ -187,8 +385,24 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
       `¡Venta registrada con éxito! Vendiste ${kilosNum} kilos por un valor de ${totalVentaCOP} pesos a ${clienteObj?.nombre || clienteNombre || 'cliente'}. El dinero ingresó automáticamente a la caja diaria.`
     );
 
+    setKilosVendidos('');
+    setSaleError('');
     setShowSaleModal(false);
   };
+
+  // Recolecciones con jornales registrados para seleccionar en "Pago de Jornales"
+  const recoleccionesConJornales = useMemo(
+    () =>
+      recolecciones
+        .filter((r) => (r.jornalesUtilizados || 0) > 0)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [recolecciones]
+  );
+
+  const selectedJornalRecoleccion = useMemo(
+    () => recoleccionesConJornales.find((r) => r.id === selectedJornalRecoleccionId) || null,
+    [recoleccionesConJornales, selectedJornalRecoleccionId]
+  );
 
   // Valida y registra un egreso (gasto) en la caja diaria con confirmación por voz
   const handleRegisterExpense = (e: React.FormEvent) => {
@@ -199,14 +413,18 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
     onAddGastoCaja({
       fecha: new Date().toISOString().split('T')[0],
       tipo: 'egreso',
-      concepto: conceptoGasto,
+      concepto: conceptoGasto.trim() || 'Gasto registrado',
       monto,
       categoria: categoriaGasto,
       registradoPor: currentUserName
     });
 
-    voiceAssistant.speak(`Gasto registrado en la caja diaria por ${monto} pesos en concepto de ${conceptoGasto}.`);
+    voiceAssistant.speak(`Gasto registrado por ${monto} pesos en concepto de ${conceptoGasto}.`);
 
+    setConceptoGasto('');
+    setMontoGasto('');
+    setSelectedJornalRecoleccionId('');
+    setValorPorJornal('');
     setShowExpenseModal(false);
   };
 
@@ -269,19 +487,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
       </div>
 
       {/* METRICAS DE CAJA Y BALANCE DEL DÍA */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Saldo Neto */}
-        <div className="bg-lime-900 text-lime-50 border-4 border-lime-600 p-6 rounded-3xl shadow-lg flex items-center justify-between">
-          <div>
-            <span className="text-xs font-black text-lime-300 uppercase">Saldo Actual en Caja</span>
-            <h3 className="text-3xl sm:text-4xl font-black text-white mt-1">{formatCOP(saldoNetoCaja)}</h3>
-            <span className="text-xs font-semibold text-lime-200">Dinero disponible en la finca</span>
-          </div>
-          <div className="p-3 bg-lime-800 rounded-2xl border-2 border-lime-500 text-lime-200">
-            <Wallet className="w-8 h-8" />
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Ingresos Total */}
         <div className="bg-emerald-50 border-4 border-emerald-600 p-6 rounded-3xl shadow-md flex items-center justify-between">
@@ -333,6 +539,16 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
             📋 Historial de Ventas ({ventas.length})
           </button>
           <button
+            onClick={() => setSubTab('historial_gastos')}
+            className={`px-4 py-2 rounded-xl font-extrabold text-sm border-2 cursor-pointer transition-all ${
+              subTab === 'historial_gastos'
+                ? 'bg-rose-800 text-white border-rose-950 shadow-md'
+                : 'bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200'
+            }`}
+          >
+            💸 Historial de Gastos ({gastosRegistrados.length})
+          </button>
+          <button
             onClick={() => setSubTab('clientes')}
             className={`px-4 py-2 rounded-xl font-extrabold text-sm border-2 cursor-pointer transition-all ${
               subTab === 'clientes'
@@ -356,7 +572,7 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
 
       {/* CONTENIDO PRINCIPAL SEGÚN SUBTAB */}
       {subTab === 'ventas_caja' || subTab === 'historial_ventas' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           
           {/* TABLA DE VENTAS REALIZADAS */}
           <div className="bg-white border-3 border-stone-300 rounded-3xl p-6 shadow-md space-y-4">
@@ -428,55 +644,82 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
             </div>
           </div>
 
-          {/* LIBRO DE CAJA DIARIA (INGRESOS Y EGRESOS) */}
-          <div className="bg-white border-3 border-stone-300 rounded-3xl p-6 shadow-md space-y-4">
-            <div className="flex items-center justify-between border-b-2 border-stone-200 pb-3">
+        </div>
+      ) : subTab === 'historial_gastos' ? (
+        /* HISTORIAL DE GASTOS / EGRESOS */
+        <div className="bg-white border-3 border-stone-300 rounded-3xl p-6 shadow-md space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-stone-200 pb-3">
+            <div>
               <h3 className="text-xl font-black text-stone-900 flex items-center gap-2">
-                <Wallet className="w-6 h-6 text-lime-700" />
-                Libro de Caja Diaria (Entradas y Salidas)
+                <ArrowDownRight className="w-6 h-6 text-rose-600" />
+                Historial de Gastos ({gastosRegistrados.length})
               </h3>
+              <p className="text-xs font-semibold text-stone-500">
+                Detalle de pagos de jornales, insumos, fletes y otros egresos registrados.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openExpensesPrintWindow}
+                className="px-4 py-2 rounded-xl bg-rose-800 hover:bg-rose-900 text-white text-xs sm:text-sm font-black flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir Gastos
+              </button>
               <VoiceHelpButton
-                textToRead="Libro de caja diaria. Muestra cada peso ingresado por venta o gastado en la finca."
+                textToRead={`Historial de gastos. Tienes ${gastosRegistrados.length} gastos registrados por un total de ${egresosCaja} pesos.`}
                 size="sm"
               />
             </div>
-
-            <div className="space-y-3">
-              {caja.length === 0 && (
-                <div className="p-4 rounded-2xl border-2 border-dashed border-stone-300 text-center text-sm text-stone-600 font-semibold bg-stone-50">
-                  Aún no hay movimientos en caja. Cuando registres una venta o un gasto, aparecerá aquí.
-                </div>
-              )}
-              {caja.map((mov) => (
-                <div 
-                  key={mov.id} 
-                  className={`p-3.5 rounded-2xl border-2 flex items-center justify-between ${
-                    mov.tipo === 'ingreso'
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                      : 'bg-rose-50 border-rose-300 text-rose-950'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                        mov.tipo === 'ingreso' ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
-                      }`}>
-                        {mov.tipo}
-                      </span>
-                      <span className="text-xs font-bold text-stone-500">{mov.fecha}</span>
-                    </div>
-                    <p className="font-extrabold text-stone-900 text-sm mt-1">{mov.concepto}</p>
-                    <p className="text-[11px] font-semibold text-stone-600">Por: {mov.registradoPor}</p>
-                  </div>
-
-                  <div className="text-right font-black text-lg">
-                    {mov.tipo === 'ingreso' ? '+' : '-'}{formatCOP(mov.monto)}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
 
+          {gastosRegistrados.length === 0 ? (
+            <div className="p-5 rounded-2xl border-2 border-dashed border-stone-300 text-center text-sm text-stone-600 font-semibold bg-stone-50">
+              Todavía no hay gastos registrados. Usa “- Registrar Gasto (Jornal/Insumos)” para agregar uno.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[640px]">
+                <thead>
+                  <tr className="bg-rose-50 border-b-2 border-rose-200 text-rose-900 text-xs font-black uppercase">
+                    <th className="p-3">Fecha</th>
+                    <th className="p-3">Categoría</th>
+                    <th className="p-3">Concepto</th>
+                    <th className="p-3">Registrado por</th>
+                    <th className="p-3 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-200 text-sm font-bold text-stone-900">
+                  {gastosRegistrados.map((gasto) => (
+                    <tr key={gasto.id} className="hover:bg-rose-50/40">
+                      <td className="p-3 whitespace-nowrap">{gasto.fecha}</td>
+                      <td className="p-3">
+                        <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-rose-100 text-rose-900 border border-rose-300">
+                          {categoriaGastoLabels[gasto.categoria] || gasto.categoria}
+                        </span>
+                      </td>
+                      <td className="p-3">{gasto.concepto}</td>
+                      <td className="p-3 text-stone-600">{gasto.registradoPor}</td>
+                      <td className="p-3 text-right font-black text-rose-800 whitespace-nowrap">
+                        -{formatCOP(gasto.monto)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-rose-50 border-t-2 border-rose-300 text-sm font-black">
+                    <td colSpan={4} className="p-3 text-rose-950 uppercase">
+                      Total Egresos ({gastosRegistrados.length} registro(s))
+                    </td>
+                    <td className="p-3 text-right text-rose-800 whitespace-nowrap">
+                      -{formatCOP(egresosCaja)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
       ) : (
         /* DIRECTORIO DE CLIENTES */
@@ -562,7 +805,12 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
                 </label>
                 <select
                   value={fincaIdSale}
-                  onChange={(e) => setFincaIdSale(e.target.value)}
+                  onChange={(e) => {
+                    setFincaIdSale(e.target.value);
+                    setSelectedRecoleccionId('');
+                    setKilosVendidos('');
+                    setSaleError('');
+                  }}
                   className="w-full p-3 rounded-2xl border-2 border-stone-300 font-bold text-base text-stone-900 bg-white"
                 >
                   {fincas.map(f => (
@@ -571,42 +819,129 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
                 </select>
               </div>
 
-              {/* Kilos y Precio por Kg */}
+              {/* Combo de Cosechas Registradas */}
               <div>
-                <span className="block text-sm font-extrabold text-stone-800 mb-2">Estado del producto:</span>
+                <label className="block text-sm font-extrabold text-stone-800 mb-1">
+                  3. ¿Qué cosecha registrada vas a vender?:
+                </label>
+                <select
+                  value={selectedRecoleccionId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setSelectedRecoleccionId(nextId);
+                    if (!nextId) setKilosVendidos('');
+                    setSaleError('');
+                  }}
+                  className="w-full p-3 rounded-2xl border-2 border-amber-400 font-bold text-sm sm:text-base text-stone-900 bg-amber-50/40"
+                >
+                  <option value="">
+                    Todas las cosechas disponibles ({disponibleBuenEstado} Kg bueno / {disponibleMalEstado} Kg mal)
+                  </option>
+                  {cosechasFincaListas.map((rec) => {
+                    const buen = rec.kilosSecoObtenidos ?? rec.rendimientoEstimadoSeco ?? rec.kilosBaba ?? 0;
+                    const mal = rec.kilosMalEstado || 0;
+                    return (
+                      <option key={rec.id} value={rec.id}>
+                        {rec.fecha} — {buen} Kg buen estado / {mal} Kg mal estado ({rec.responsable})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Estado / Calidad del cacao disponible */}
+              <div>
+                <span className="block text-sm font-extrabold text-stone-800 mb-2">4. Tipo de cacao a vender:</span>
                 <div className="grid grid-cols-2 gap-3">
                   {([
-                    ['buen_estado', 'Buen estado'],
-                    ['mal_estado', 'Mal estado']
-                  ] as const).map(([value, label]) => (
-                    <label key={value} className={`p-3 rounded-2xl border-2 font-black cursor-pointer ${estadoCalidadSale === value ? 'bg-emerald-100 border-emerald-600 text-emerald-950' : 'bg-stone-50 border-stone-300 text-stone-700'}`}>
-                      <input
-                        type="radio"
-                        name="estado-calidad-venta"
-                        value={value}
-                        checked={estadoCalidadSale === value}
-                        onChange={() => setEstadoCalidadSale(value)}
-                        className="mr-2"
-                      />
-                      {label}
-                    </label>
-                  ))}
+                    ['buen_estado', 'Buen estado', kilosBuenParaVenta],
+                    ['mal_estado', 'Mal estado (menor calidad)', kilosMalParaVenta]
+                  ] as const).map(([value, label, disp]) => {
+                    const disabled = disp <= 0;
+                    const active = estadoCalidadSale === value && !disabled;
+                    return (
+                      <label
+                        key={value}
+                        className={`p-3 rounded-2xl border-2 font-black transition-colors ${
+                          disabled
+                            ? 'bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed'
+                            : active
+                              ? value === 'mal_estado'
+                                ? 'bg-rose-100 border-rose-600 text-rose-950 cursor-pointer'
+                                : 'bg-emerald-100 border-emerald-600 text-emerald-950 cursor-pointer'
+                              : 'bg-stone-50 border-stone-300 text-stone-700 cursor-pointer hover:bg-stone-100'
+                        }`}
+                      >
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            name="estado-calidad-venta"
+                            value={value}
+                            disabled={disabled}
+                            checked={estadoCalidadSale === value}
+                            onChange={() => {
+                              setEstadoCalidadSale(value);
+                              setSaleError('');
+                            }}
+                            className="mr-2"
+                          />
+                          <span className="text-sm">{label}</span>
+                        </div>
+                        <span className="block text-xs font-bold mt-1 ml-5">
+                          {disp > 0 ? `${disp} Kg disponibles` : 'Sin kilos disponibles'}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
+
+              {(saleError || superaDisponible) && (
+                <div className="p-3 rounded-2xl border-2 border-rose-300 bg-rose-50 text-rose-900 text-xs font-black">
+                  {saleError || `Solo tienes ${disponibleSeleccionado} Kg disponibles en ${estadoCalidadSale === 'mal_estado' ? 'mal estado' : 'buen estado'} para esta finca.`}
+                </div>
+              )}
 
               {/* Kilos y Precio por Kg */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-extrabold text-stone-800 mb-1">
-                    Kilos Vendidos (Kg):
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-extrabold text-stone-800">
+                      Kilos Vendidos (Kg):
+                    </label>
+                    {disponibleSeleccionado > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKilosVendidos(String(disponibleSeleccionado));
+                          setSaleError('');
+                        }}
+                        className="text-[11px] font-black text-emerald-800 underline hover:text-emerald-950 cursor-pointer"
+                      >
+                        Todo ({disponibleSeleccionado} Kg)
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="number"
                     required
-                    step="1"
+                    min="0.1"
+                    max={disponibleSeleccionado > 0 ? disponibleSeleccionado : undefined}
+                    step="0.1"
+                    disabled={disponibleSeleccionado <= 0}
+                    placeholder={disponibleSeleccionado > 0 ? `Máx ${disponibleSeleccionado}` : 'Sin kilos'}
                     value={kilosVendidos}
-                    onChange={(e) => setKilosVendidos(e.target.value)}
-                    className="w-full p-3 rounded-2xl border-2 border-emerald-500 font-black text-2xl text-emerald-950"
+                    onChange={(e) => {
+                      setKilosVendidos(e.target.value);
+                      setSaleError('');
+                    }}
+                    className={`w-full p-3 rounded-2xl border-2 font-black text-2xl ${
+                      disponibleSeleccionado <= 0
+                        ? 'border-stone-300 bg-stone-100 text-stone-400 cursor-not-allowed'
+                        : superaDisponible
+                          ? 'border-rose-500 bg-rose-50 text-rose-950'
+                          : 'border-emerald-500 text-emerald-950'
+                    }`}
                   />
                 </div>
 
@@ -617,10 +952,19 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
                   <input
                     type="number"
                     required
-                    step="500"
+                    min="1"
+                    step="1"
+                    disabled={disponibleSeleccionado <= 0}
                     value={precioPorKg}
-                    onChange={(e) => setPrecioPorKg(e.target.value)}
-                    className="w-full p-3 rounded-2xl border-2 border-emerald-500 font-black text-2xl text-emerald-950"
+                    onChange={(e) => {
+                      setPrecioPorKg(e.target.value);
+                      setSaleError('');
+                    }}
+                    className={`w-full p-3 rounded-2xl border-2 font-black text-2xl ${
+                      disponibleSeleccionado <= 0
+                        ? 'border-stone-300 bg-stone-100 text-stone-400 cursor-not-allowed'
+                        : 'border-emerald-500 text-emerald-950'
+                    }`}
                   />
                 </div>
               </div>
@@ -644,7 +988,8 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-lg border-2 border-emerald-900 shadow-xl cursor-pointer"
+                  disabled={disponibleSeleccionado <= 0 || superaDisponible || kilosNum <= 0 || precioNum <= 0}
+                  className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-300 disabled:text-stone-500 disabled:border-stone-400 disabled:cursor-not-allowed text-white font-black text-lg border-2 border-emerald-900 shadow-xl cursor-pointer"
                 >
                   ¡Confirmar Venta!
                 </button>
@@ -665,11 +1010,102 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
 
             <form onSubmit={handleRegisterExpense} className="space-y-3">
               <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">Categoría:</label>
+                <select
+                  value={categoriaGasto}
+                  onChange={(e) => {
+                    const nextCat = e.target.value as CategoriaGasto;
+                    setCategoriaGasto(nextCat);
+                    if (nextCat !== 'pago_jornales') {
+                      setSelectedJornalRecoleccionId('');
+                      setValorPorJornal('');
+                    }
+                  }}
+                  className="w-full p-2.5 rounded-xl border-2 border-stone-300 font-bold text-sm bg-white"
+                >
+                  <option value="pago_jornales">Pago de Jornales</option>
+                  <option value="insumos_fertilizante">Insumos y Fertilizantes</option>
+                  <option value="transporte_flete">Transporte y Fletes</option>
+                  <option value="mantenimiento_herramientas">Herramientas y Mantenimiento</option>
+                  <option value="alimentacion">Alimentación Trabajo</option>
+                  <option value="otros_gastos">Otros Gastos</option>
+                </select>
+              </div>
+
+              {categoriaGasto === 'pago_jornales' && (
+                <div className="space-y-2.5 p-3 rounded-2xl bg-amber-50 border-2 border-amber-300">
+                  <div>
+                    <label className="block text-xs font-black text-amber-950 mb-1">
+                      Jornales registrados en cosechas:
+                    </label>
+                    <select
+                      value={selectedJornalRecoleccionId}
+                      onChange={(e) => {
+                        const recId = e.target.value;
+                        setSelectedJornalRecoleccionId(recId);
+                        const rec = recoleccionesConJornales.find((r) => r.id === recId);
+                        if (rec) {
+                          const fincaNombre = fincas.find((f) => f.id === rec.fincaId)?.nombre || 'Finca';
+                          const etiquetaJornal = rec.jornalesUtilizados === 1 ? 'jornal' : 'jornales';
+                          setConceptoGasto(`Pago ${rec.jornalesUtilizados} ${etiquetaJornal} - ${fincaNombre} (${rec.fecha})`);
+                          const valorUnit = parseFloat(valorPorJornal) || 0;
+                          if (valorUnit > 0) {
+                            setMontoGasto(String(Math.round(rec.jornalesUtilizados * valorUnit)));
+                          }
+                        }
+                      }}
+                      className="w-full p-2.5 rounded-xl border-2 border-amber-400 font-bold text-sm bg-white text-stone-900"
+                    >
+                      <option value="">
+                        {recoleccionesConJornales.length > 0
+                          ? 'Selecciona una cosecha con jornales...'
+                          : 'No hay jornales registrados en cosechas'}
+                      </option>
+                      {recoleccionesConJornales.map((rec) => {
+                        const fincaNombre = fincas.find((f) => f.id === rec.fincaId)?.nombre || 'Finca';
+                        const etiquetaJornal = rec.jornalesUtilizados === 1 ? 'jornal' : 'jornales';
+                        return (
+                          <option key={rec.id} value={rec.id}>
+                            {rec.fecha} — {fincaNombre} — {rec.jornalesUtilizados} {etiquetaJornal} ({rec.responsable})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {selectedJornalRecoleccion && (
+                    <div>
+                      <label className="block text-xs font-bold text-amber-900 mb-1">
+                        Valor por jornal ($ COP) — {selectedJornalRecoleccion.jornalesUtilizados}{' '}
+                        {selectedJornalRecoleccion.jornalesUtilizados === 1 ? 'jornal' : 'jornales'}:
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Ej: 50000"
+                        value={valorPorJornal}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setValorPorJornal(val);
+                          const unit = parseFloat(val) || 0;
+                          setMontoGasto(
+                            unit > 0 ? String(Math.round(selectedJornalRecoleccion.jornalesUtilizados * unit)) : ''
+                          );
+                        }}
+                        className="w-full p-2.5 rounded-xl border-2 border-amber-400 font-black text-base text-amber-950 bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
                 <label className="block text-xs font-bold text-stone-800">Concepto del Gasto:</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej: Pago 2 Jornales de limpia"
+                  placeholder="Ej: Pago 2 Jornales de recolección"
                   value={conceptoGasto}
                   onChange={(e) => setConceptoGasto(e.target.value)}
                   className="w-full p-3 rounded-2xl border-2 border-stone-300 font-bold text-base text-stone-900"
@@ -681,27 +1117,13 @@ export const VentasCajaView: React.FC<VentasCajaViewProps> = ({
                 <input
                   type="number"
                   required
-                  step="1000"
+                  min="1"
+                  step="1"
+                  placeholder="Ej: 160000"
                   value={montoGasto}
                   onChange={(e) => setMontoGasto(e.target.value)}
                   className="w-full p-3 rounded-2xl border-2 border-rose-400 font-black text-2xl text-rose-950 bg-rose-50"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-800">Categoría:</label>
-                <select
-                  value={categoriaGasto}
-                  onChange={(e) => setCategoriaGasto(e.target.value as CategoriaGasto)}
-                  className="w-full p-2.5 rounded-xl border border-stone-300 font-bold text-sm bg-white"
-                >
-                  <option value="pago_jornales">Pago de Jornales</option>
-                  <option value="insumos_fertilizante">Insumos y Fertilizantes</option>
-                  <option value="transporte_flete">Transporte y Fletes</option>
-                  <option value="mantenimiento_herramientas">Herramientas y Mantenimiento</option>
-                  <option value="alimentacion">Alimentación Trabajo</option>
-                  <option value="otros_gastos">Otros Gastos</option>
-                </select>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

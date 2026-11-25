@@ -351,7 +351,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
               <div className="bg-amber-50 p-5 rounded-3xl border-2 border-amber-300 space-y-3">
                 <label className="block text-lg font-black text-amber-950 flex items-center gap-2">
                   <Scale className="w-6 h-6 text-amber-800" />
-                  Kilos de cacao listo para la venta
+                  Kilos de cacao en buen estado (listo para venta)
                 </label>
                 <input type="number" min="1" step="0.1" placeholder="Ej: 120" value={kilosBaba} onChange={(e) => handleKilosChange(e.target.value)} className="w-full p-4 rounded-2xl border-2 border-amber-600 bg-white text-3xl font-black text-amber-950" />
                 <div className="flex flex-wrap gap-2">
@@ -371,7 +371,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                   <span className="bg-rose-200 text-rose-950 font-black text-xs px-2.5 py-1 rounded-full uppercase">Control de calidad</span>
                   <span className="text-xs text-emerald-200">Total: {totalCosechadoKg} Kg</span>
                 </div>
-                <p className="text-sm font-bold text-emerald-100 mt-4">¿Salió cacao en mal estado?</p>
+                <p className="text-sm font-bold text-emerald-100 mt-4">¿Salió cacao en mal estado (menor calidad para venta)?</p>
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <button
                     type="button"
@@ -390,7 +390,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                 </div>
                 {hayMalEstado && (
                   <div className="mt-3">
-                    <label className="block text-xs font-bold text-rose-200 uppercase">¿Cuántos kilos salieron en mal estado?</label>
+                    <label className="block text-xs font-bold text-rose-200 uppercase">Kilos en mal estado / menor calidad (listo para venta)</label>
                     <input
                       type="number"
                       min="0"
@@ -404,8 +404,8 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                 )}
                 <div className="bg-emerald-950 mt-3 p-4 rounded-2xl border-2 border-emerald-500 text-center">
                   <div className="grid grid-cols-2 gap-2 text-center">
-                    <div><span className="block text-xs text-emerald-200 uppercase font-bold">Listo venta</span><span className="text-2xl font-black text-emerald-200">{kilosBabaNum} Kg</span></div>
-                    <div><span className="block text-xs text-rose-200 uppercase font-bold">Mal estado</span><span className="text-2xl font-black text-rose-300">{kilosMalEstadoNum} Kg</span></div>
+                    <div><span className="block text-xs text-emerald-200 uppercase font-bold">Buen estado</span><span className="text-2xl font-black text-emerald-200">{kilosBabaNum} Kg</span></div>
+                    <div><span className="block text-xs text-rose-200 uppercase font-bold">Mal estado (menor calidad)</span><span className="text-2xl font-black text-rose-300">{kilosMalEstadoNum} Kg</span></div>
                   </div>
                 </div>
               </div>
@@ -413,7 +413,7 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
               <div className="space-y-4">
                 <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
                   <h3 className="font-black text-stone-900">Datos del estado y registro</h3>
-                <p className="text-sm text-stone-600">El cacao listo se suma al inventario para la venta y el cacao en mal estado queda registrado para control.</p>
+                <p className="text-sm text-stone-600">Ambos tipos de cacao quedan registrados en el historial como listos para la venta (buen estado y mal estado de menor calidad).</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="block space-y-2">
@@ -438,9 +438,9 @@ export const RecoleccionViewClean: React.FC<RecoleccionViewProps> = ({
                 <p className="text-sm text-stone-600">Revisa que todo este correcto antes de guardar.</p>
               </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Listo venta</span><span className="text-2xl font-black text-emerald-800">{kilosBabaNum} Kg</span></div>
-                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Mal estado</span><span className="text-2xl font-black text-rose-700">{kilosMalEstadoNum} Kg</span></div>
-                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Estado</span><span className="text-sm font-black text-emerald-900">{STATE_LABELS.seco_listo}</span></div>
+                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Buen estado</span><span className="text-2xl font-black text-emerald-800">{kilosBabaNum} Kg</span></div>
+                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Mal estado (menor calidad)</span><span className="text-2xl font-black text-rose-700">{kilosMalEstadoNum} Kg</span></div>
+                <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Total listo venta</span><span className="text-2xl font-black text-amber-950">{totalCosechadoKg} Kg</span></div>
                 <div className="bg-white p-3 rounded-2xl border border-stone-200"><span className="block text-xs font-bold text-stone-500 uppercase">Jornales</span><span className="text-2xl font-black text-stone-900">{jornalesUtilizados}</span></div>
               </div>
               <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas opcionales" className="w-full p-3 rounded-2xl border-2 border-stone-200 font-semibold" rows={3} />
