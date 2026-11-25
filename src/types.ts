@@ -5,7 +5,7 @@
  */
 
 /** Pestañas o vistas principales disponibles en la navegación de la aplicación. */
-export type ActiveTab = 'auth' | 'dashboard' | 'fincas' | 'recoleccion' | 'inventario' | 'ventas_caja' | 'clientes' | 'configuracion';
+export type ActiveTab = 'auth' | 'dashboard' | 'perfil' | 'fincas' | 'recoleccion' | 'inventario' | 'ventas_caja' | 'clientes' | 'configuracion';
 
 /** Representa un usuario autenticado o registrado en la plataforma. */
 export interface Usuario {
@@ -15,6 +15,9 @@ export interface Usuario {
   celularWhatsApp: string;
   nombreFincaVereda: string;
   fincaId?: string;
+  correo?: string;
+  activo?: boolean;
+  fotoPerfil?: string;
   /** Solo para la demostración local. En producción debe gestionarse en un servidor. */
   password?: string;
   rol?: 'admin' | 'administrador_finca' | 'productor' | 'operario';

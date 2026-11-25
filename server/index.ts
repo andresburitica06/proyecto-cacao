@@ -143,13 +143,15 @@ app.get('/api/health', async (_req, res) => {
  * contraseña (4 caracteres) y controla cédulas duplicadas (HTTP 409).
  */
 app.post('/api/auth/register', async (req, res) => {
-  const { cedula, nombreCompleto, telefono, password, nombreFinca, municipio = 'Por completar' } = req.body;
-  if (![cedula, nombreCompleto, password, nombreFinca].every((value: unknown) => typeof value === 'string' && value.trim()) || password.length < 4) return res.status(400).json({ message: 'Completa los datos requeridos. La contraseña debe tener mínimo 4 caracteres.' });
+  const { cedula, nombreCompleto, telefono, correo, password, nombreFinca, municipio = 'Por completar' } = req.body;
+  if (![cedula, nombreCompleto, correo, password, nombreFinca].every((value: unknown) => typeof value === 'string' && value.trim()) || password.length < 4) return res.status(400).json({ message: 'Completa los datos requeridos. La contraseña debe tener mínimo 4 caracteres.' });
+  const cleanEmail = correo.trim().toLowerCase();
+  if (cleanEmail.length > 150 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ message: 'Ingresa un correo electrónico válido.' });
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
     const hash = await bcrypt.hash(password, 12);
-    const [userResult] = await connection.execute<mysql.ResultSetHeader>('INSERT INTO usuarios (cedula,nombre_completo,telefono,password_hash,rol) VALUES (?,?,?,?,\'productor\')', [cedula.trim(), nombreCompleto.trim(), telefono?.trim() || null, hash]);
+    const [userResult] = await connection.execute<mysql.ResultSetHeader>('INSERT INTO usuarios (cedula,nombre_completo,telefono,correo,password_hash,rol) VALUES (?,?,?,?,?,\'productor\')', [cedula.trim(), nombreCompleto.trim(), telefono?.trim() || null, cleanEmail, hash]);
     const [farmResult] = await connection.execute<mysql.ResultSetHeader>('INSERT INTO fincas (nombre,municipio,hectareas_total,hectareas_cacao) VALUES (?,?,0,0)', [nombreFinca.trim(), municipio.trim()]);
     await connection.execute('INSERT INTO usuario_finca (id_usuario,id_finca,rol_en_finca) VALUES (?,?,\'propietario\')', [userResult.insertId, farmResult.insertId]);
     await connection.commit();
@@ -157,7 +159,7 @@ app.post('/api/auth/register', async (req, res) => {
   } catch (error: unknown) {
     await connection.rollback();
     const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
-    res.status(code === 'ER_DUP_ENTRY' ? 409 : 500).json({ message: code === 'ER_DUP_ENTRY' ? 'La cédula ya está registrada.' : 'No fue posible crear la cuenta.' });
+    res.status(code === 'ER_DUP_ENTRY' ? 409 : 500).json({ message: code === 'ER_DUP_ENTRY' ? 'La cédula o el correo ya están registrados.' : 'No fue posible crear la cuenta.' });
   }
   finally { connection.release(); }
 });
@@ -173,6 +175,107 @@ app.post('/api/auth/login', async (req, res) => {
   const user = rows[0];
   if (!user || !(await bcrypt.compare(password || '', user.password_hash))) return res.status(401).json({ message: 'Cédula o contraseña incorrecta.' });
   res.json({ token: sign(user.id_usuario, user.rol), user: { id: user.id_usuario, rol: user.rol, nombreCompleto: user.nombre_completo, fincaId: user.id_finca, fincaNombre: user.finca_nombre } });
+});
+
+type PublicUserProfile = RowDataPacket & {
+  id_usuario: number;
+  cedula: string;
+  nombre_completo: string;
+  telefono: string | null;
+  correo: string | null;
+  rol: string;
+  activo: number | boolean;
+};
+
+const userProfileColumns = 'id_usuario,cedula,nombre_completo,telefono,correo,rol,activo';
+
+const canManageUserProfile = (req: AuthRequest, userId: number) =>
+  req.user?.rol === 'admin' || req.user?.id === userId;
+
+/**
+ * GET /api/usuarios/:id
+ * Devuelve los datos públicos del perfil propio (o de cualquier usuario para admin).
+ */
+app.get('/api/usuarios/:id', auth, async (req: AuthRequest, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ message: 'Usuario inválido.' });
+  if (!canManageUserProfile(req, userId)) return res.status(403).json({ message: 'No tienes permiso para consultar este perfil.' });
+
+  try {
+    const [rows] = await pool.execute<PublicUserProfile[]>(
+      `SELECT ${userProfileColumns} FROM usuarios WHERE id_usuario=? LIMIT 1`,
+      [userId]
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
+    return res.json({ ...user, activo: Boolean(user.activo) });
+  } catch (error: unknown) {
+    console.error('Error al consultar el perfil del usuario:', error);
+    return res.status(500).json({ message: 'No fue posible cargar el perfil del usuario.' });
+  }
+});
+
+/**
+ * PUT /api/usuarios/:id
+ * Actualiza datos personales sin permitir cambiar rol, estado ni contraseña.
+ */
+app.put('/api/usuarios/:id', auth, async (req: AuthRequest, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ message: 'Usuario inválido.' });
+  if (!canManageUserProfile(req, userId)) return res.status(403).json({ message: 'No tienes permiso para actualizar este perfil.' });
+
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({ message: 'Los datos del perfil no son válidos.' });
+  }
+  const { cedula, nombre_completo, telefono, correo } = req.body as {
+    cedula?: unknown;
+    nombre_completo?: unknown;
+    telefono?: unknown;
+    correo?: unknown;
+  };
+  if (typeof cedula !== 'string' || typeof nombre_completo !== 'string'
+    || typeof telefono !== 'string' || typeof correo !== 'string') {
+    return res.status(400).json({ message: 'Los datos del perfil no son válidos.' });
+  }
+
+  const cleanCedula = cedula.trim();
+  const cleanName = nombre_completo.trim();
+  const cleanPhone = telefono.trim();
+  const cleanEmail = correo.trim();
+  if (!cleanCedula || cleanCedula.length > 20 || !cleanName || cleanName.length > 150
+    || cleanPhone.length > 20 || cleanEmail.length > 150
+    || (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))) {
+    return res.status(400).json({ message: 'Revisa la cédula, el nombre, el teléfono y el correo ingresados.' });
+  }
+
+  try {
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      'UPDATE usuarios SET cedula=?,nombre_completo=?,telefono=?,correo=? WHERE id_usuario=?',
+      [cleanCedula, cleanName, cleanPhone || null, cleanEmail || null, userId]
+    );
+    if (result.affectedRows === 0) {
+      const [existing] = await pool.execute<RowDataPacket[]>(
+        'SELECT id_usuario FROM usuarios WHERE id_usuario=? LIMIT 1',
+        [userId]
+      );
+      if (existing.length === 0) return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    const [rows] = await pool.execute<PublicUserProfile[]>(
+      `SELECT ${userProfileColumns} FROM usuarios WHERE id_usuario=? LIMIT 1`,
+      [userId]
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
+    return res.json({ ...user, activo: Boolean(user.activo) });
+  } catch (error: unknown) {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+    if (code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'La cédula o el correo ya están registrados.' });
+    console.error('Error al actualizar el perfil del usuario:', error);
+    return res.status(500).json({ message: 'No fue posible actualizar el perfil del usuario.' });
+  }
 });
 
 // -----------------------------------------------------------------------------
