@@ -715,14 +715,23 @@ app.post('/api/ventas', auth, async (req: AuthRequest, res) => {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+    const estadoCalidad = body.estadoCalidad === 'mal_estado' ? 'mal_estado' : 'buen_estado';
+    const tipoProductoNormalizado =
+      estadoCalidad === 'mal_estado'
+        ? 'cacao_seco_corriente'
+        : (body.tipoProducto || 'cacao_seco_premium');
     const [inventarioRows] = await connection.execute<RowDataPacket[]>(
-      'SELECT * FROM inventarios WHERE id_finca=? AND codigo_tipo_producto=? AND estado_calidad=? LIMIT 1',
-      [Number(body.fincaId), body.tipoProducto, body.estadoCalidad || 'buen_estado']
+      `SELECT * FROM inventarios
+       WHERE id_finca=? AND estado_calidad=?
+       ORDER BY (codigo_tipo_producto = ?) DESC, cantidad_kg DESC
+       LIMIT 1`,
+      [Number(body.fincaId), estadoCalidad, tipoProductoNormalizado]
     );
     const inventario = inventarioRows[0];
     if (!inventario || Number(inventario.cantidad_kg) < kilos) {
       throw new Error('Inventario insuficiente para registrar la venta.');
     }
+    const tipoProductoVenta = String(inventario.codigo_tipo_producto || tipoProductoNormalizado);
     let clienteId = body.clienteId ? Number(body.clienteId) : null;
     if (!Number.isInteger(clienteId)) clienteId = null;
     const comprobante = body.comprobanteNumero || `FAC-${Date.now()}`;
@@ -731,8 +740,8 @@ app.post('/api/ventas', auth, async (req: AuthRequest, res) => {
        (id_finca,id_cliente,cliente_nombre_libre,cliente_documento_libre,id_usuario_registra,fecha_venta,codigo_tipo_producto,estado_calidad_vendido,kilos_vendidos,precio_por_kg,total_venta,metodo_pago,estado_pago,comprobante_numero,notas)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [Number(body.fincaId), clienteId, body.clienteNombre || 'Cliente', body.clienteDocumento || null, req.user!.id,
-       body.fecha ? new Date(`${body.fecha}T12:00:00`) : new Date(), body.tipoProducto,
-       body.estadoCalidad || 'buen_estado', kilos, precio, kilos * precio, body.metodoPago || 'efectivo',
+       body.fecha ? new Date(`${body.fecha}T12:00:00`) : new Date(), tipoProductoVenta,
+       estadoCalidad, kilos, precio, kilos * precio, body.metodoPago || 'efectivo',
        body.pagado === false ? 'pendiente' : 'pagado', comprobante, body.notas || null]
     );
     await connection.execute(

@@ -1,11 +1,12 @@
 /**
- * Componente de historial de recolecciones de cacao.
- * Muestra una tabla ordenada por fecha con los registros guardados y permite
- * editarlos en línea o finalizar su proceso registrando los kilos secos obtenidos.
+ * Componente de historial de cacao listo para la venta.
+ * Muestra únicamente las cosechas que salieron listas para venta en sus dos calidades
+ * (buen estado y mal estado / menor calidad) y permite generar un reporte imprimible
+ * con los totales consolidados.
  */
-import React, { useRef, useState } from 'react';
-import { CheckCircle2, Edit3, Save } from 'lucide-react';
-import { Finca, EstadoProceso, Recoleccion, ZonaCultivo } from '../types';
+import React, { useMemo, useRef } from 'react';
+import { Printer } from 'lucide-react';
+import { Finca, Recoleccion, ZonaCultivo } from '../types';
 import { VoiceHelpButton } from './VoiceHelpButton';
 
 /** Propiedades esperadas por el componente RecoleccionesHistory. */
@@ -13,186 +14,256 @@ interface RecoleccionesHistoryProps {
   fincas: Finca[];
   zonas: ZonaCultivo[];
   recolecciones: Recoleccion[];
-  onUpdateRecoleccion: (id: string, changes: Partial<Omit<Recoleccion, 'id'>>) => void;
+  fincaFilterLabel?: string;
+  onUpdateRecoleccion?: (id: string, changes: Partial<Omit<Recoleccion, 'id'>>) => void;
 }
 
-/** Etiquetas legibles en español para cada estado del proceso de poscosecha. */
-const STATE_LABELS: Record<EstadoProceso, string> = {
-  baba: 'Cacao Baba Fresco',
-  fermentacion: 'En Fermentacion',
-  secado: 'En Secado',
-  seco_listo: 'Cacao Seco Listo'
-};
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 export const RecoleccionesHistory: React.FC<RecoleccionesHistoryProps> = ({
   fincas,
   zonas,
   recolecciones,
-  onUpdateRecoleccion
+  fincaFilterLabel = 'Todas las fincas'
 }) => {
-  // Referencia al contenedor del historial para desplazamiento programático si se requiere
   const historialRef = useRef<HTMLDivElement | null>(null);
-  // Estados para controlar qué registro se está editando o finalizando en línea
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [finalizingId, setFinalizingId] = useState<string | null>(null);
-  const [kilosSecoFinales, setKilosSecoFinales] = useState('');
-  const [notasFinalizacion, setNotasFinalizacion] = useState('');
-  const [editForm, setEditForm] = useState({ kilosBaba: '', kilosMalEstado: '0', responsable: '', notas: '' });
 
-  // Inicia la edición en línea cargando los valores actuales de la recolección
-  const startEdit = (rec: Recoleccion) => {
-    setEditingId(rec.id);
-    setEditForm({ kilosBaba: String(rec.kilosSecoObtenidos ?? rec.kilosBaba), kilosMalEstado: String(rec.kilosMalEstado || 0), responsable: rec.responsable, notas: rec.notas || '' });
-  };
+  // Solo registros listos para la venta, ordenados del más reciente al más antiguo
+  const visibleHistory = useMemo(
+    () =>
+      recolecciones
+        .filter((rec) => rec.estadoProceso === 'seco_listo')
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [recolecciones]
+  );
 
-  // Valida y guarda los cambios de la edición recalculando el rendimiento seco estimado (38%)
-  const saveEdit = () => {
-    if (!editingId) return;
-    const kilos = Number(editForm.kilosBaba) || 0;
-    if (kilos <= 0) return;
+  const getKilosBuenEstado = (rec: Recoleccion) =>
+    rec.kilosSecoObtenidos ?? rec.rendimientoEstimadoSeco ?? rec.kilosBaba ?? 0;
 
-    onUpdateRecoleccion(editingId, {
-      kilosBaba: kilos,
-      rendimientoEstimadoSeco: kilos,
-      kilosSecoObtenidos: kilos,
-      kilosMalEstado: Math.max(0, Number(editForm.kilosMalEstado) || 0),
-      responsable: editForm.responsable.trim() || 'Propietario',
-      notas: editForm.notas
+  const getKilosMalEstado = (rec: Recoleccion) => rec.kilosMalEstado || 0;
+
+  // Totales consolidados del historial visible
+  const totalBuenEstado = useMemo(
+    () => Math.round(visibleHistory.reduce((acc, rec) => acc + getKilosBuenEstado(rec), 0) * 10) / 10,
+    [visibleHistory]
+  );
+  const totalMalEstado = useMemo(
+    () => Math.round(visibleHistory.reduce((acc, rec) => acc + getKilosMalEstado(rec), 0) * 10) / 10,
+    [visibleHistory]
+  );
+  const totalGeneral = Math.round((totalBuenEstado + totalMalEstado) * 10) / 10;
+
+  // Abre una ventana limpia lista para imprimir o guardar como PDF el historial y sus totales
+  const handlePrintHistory = () => {
+    const printWindow = window.open('', '_blank', 'width=960,height=720');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    const fechaImpresion = new Date().toLocaleDateString('es-CO', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
-    setEditingId(null);
+
+    const rowsHtml =
+      visibleHistory.length === 0
+        ? `<tr><td colspan="7" style="text-align:center;padding:16px;color:#57534e;">No hay registros de cacao listo para la venta.</td></tr>`
+        : visibleHistory
+            .map((rec) => {
+              const finca = fincas.find((f) => f.id === rec.fincaId);
+              const zona = zonas.find((z) => z.id === rec.zonaId);
+              const buen = getKilosBuenEstado(rec);
+              const mal = getKilosMalEstado(rec);
+              const totalFila = Math.round((buen + mal) * 10) / 10;
+              return `
+                <tr>
+                  <td>${escapeHtml(rec.fecha)}</td>
+                  <td><strong>${escapeHtml(finca?.nombre || 'Finca')}</strong><br/><span style="font-size:11px;color:#57534e;">${escapeHtml(zona?.nombreZona || 'General')}</span></td>
+                  <td style="text-align:right;color:#065f46;font-weight:700;">${buen} Kg</td>
+                  <td style="text-align:right;color:#be123c;font-weight:700;">${mal} Kg</td>
+                  <td style="text-align:right;font-weight:800;">${totalFila} Kg</td>
+                  <td style="text-align:center;">${rec.jornalesUtilizados}</td>
+                  <td>${escapeHtml(rec.responsable || 'Propietario')}</td>
+                </tr>
+              `;
+            })
+            .join('');
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Historial de Cacao Listo para Venta</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #1c1917; margin: 28px; }
+    .header { border-bottom: 3px solid #78350f; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .header h1 { margin: 0; font-size: 22px; color: #451a03; }
+    .header p { margin: 4px 0 0; font-size: 12px; color: #57534e; }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .card { border: 2px solid #d6d3d1; border-radius: 12px; padding: 12px 14px; }
+    .card.total { border-color: #d97706; background: #fffbeb; }
+    .card.bueno { border-color: #059669; background: #ecfdf5; }
+    .card.malo { border-color: #e11d48; background: #fff1f2; }
+    .card .label { font-size: 11px; text-transform: uppercase; font-weight: 700; color: #44403c; }
+    .card .value { font-size: 22px; font-weight: 900; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border: 1px solid #d6d3d1; padding: 8px 10px; }
+    th { background: #f5f5f4; text-transform: uppercase; font-size: 11px; text-align: left; }
+    tfoot td { background: #fef3c7; font-weight: 900; }
+    @media print { body { margin: 12px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Historial de Cacao Listo para Venta</h1>
+      <p>Filtro: ${escapeHtml(fincaFilterLabel)} &bull; Fecha de reporte: ${escapeHtml(fechaImpresion)}</p>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:#78350f;">AppCacao</div>
+  </div>
+
+  <div class="summary">
+    <div class="card total">
+      <div class="label">Total Cacao para Venta</div>
+      <div class="value">${totalGeneral} Kg</div>
+    </div>
+    <div class="card bueno">
+      <div class="label">Total en Buen Estado</div>
+      <div class="value" style="color:#065f46;">${totalBuenEstado} Kg</div>
+    </div>
+    <div class="card malo">
+      <div class="label">Total Mal Estado (Menor Calidad)</div>
+      <div class="value" style="color:#be123c;">${totalMalEstado} Kg</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Finca / Lote</th>
+        <th style="text-align:right;">Buen Estado</th>
+        <th style="text-align:right;">Mal Estado (Menor Calidad)</th>
+        <th style="text-align:right;">Total Listo Venta</th>
+        <th style="text-align:center;">Jornales</th>
+        <th>Responsable</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2">TOTALES CONSOLIDADOS</td>
+        <td style="text-align:right;color:#065f46;">${totalBuenEstado} Kg</td>
+        <td style="text-align:right;color:#be123c;">${totalMalEstado} Kg</td>
+        <td style="text-align:right;">${totalGeneral} Kg</td>
+        <td colspan="2">${visibleHistory.length} registro(s)</td>
+      </tr>
+    </tfoot>
+  </table>
+  <script>window.onload = () => { window.print(); };</script>
+</body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
-
-  // Abre el formulario de finalización prellenando los kilos secos reales o estimados
-  const startFinalize = (rec: Recoleccion) => {
-    setFinalizingId(rec.id);
-    setKilosSecoFinales(rec.kilosSecoObtenidos ? String(rec.kilosSecoObtenidos) : String(rec.rendimientoEstimadoSeco));
-    setNotasFinalizacion(rec.notas || '');
-  };
-
-  // Marca la recolección como finalizada ('seco_listo') con los kilos secos obtenidos
-  const saveFinalize = () => {
-    if (!finalizingId) return;
-    const kilosSeco = Number(kilosSecoFinales) || 0;
-    if (kilosSeco <= 0) return;
-
-    onUpdateRecoleccion(finalizingId, {
-      kilosSecoObtenidos: kilosSeco,
-      estadoProceso: 'seco_listo',
-      notas: notasFinalizacion
-    });
-    setFinalizingId(null);
-    setKilosSecoFinales('');
-    setNotasFinalizacion('');
-  };
-
-  // Copia ordenada descendentemente por fecha para mostrar los registros más recientes primero
-  const visibleHistory = [...recolecciones].sort((a, b) => b.fecha.localeCompare(a.fecha));
 
   return (
     <div ref={historialRef} id="historial-recolecciones" className="bg-white border-2 border-stone-200 rounded-3xl p-5 shadow-sm space-y-4">
-      {/* Encabezado del historial con botón de ayuda por voz */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-black text-stone-900">Historial de recolecciones</h3>
-        <VoiceHelpButton textToRead="Historial de recolecciones. Aqui puedes editar los registros guardados." size="sm" />
+      {/* Encabezado del historial con botón de impresión y ayuda por voz */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-black text-stone-900">Historial de cacao listo para la venta</h3>
+          <p className="text-xs font-semibold text-stone-500">
+            Registro de cacao en buen estado y cacao en mal estado (menor calidad) que salio para venta.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePrintHistory}
+            className="px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs sm:text-sm font-black flex items-center gap-2 shadow-sm cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            Imprimir Historial
+          </button>
+          <VoiceHelpButton
+            textToRead={`Historial de cacao listo para la venta. Total general: ${totalGeneral} kilos. Buen estado: ${totalBuenEstado} kilos. Mal estado o menor calidad: ${totalMalEstado} kilos.`}
+            size="sm"
+          />
+        </div>
       </div>
 
-      {/* Tabla principal de recolecciones con scroll horizontal en pantallas pequeñas */}
+      {/* Tabla principal de registros listos para la venta */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[760px]">
+        <table className="w-full text-left border-collapse min-w-[680px]">
           <thead>
             <tr className="bg-stone-100 border-b-2 border-stone-300 text-stone-700 text-xs font-black uppercase">
               <th className="p-3">Fecha</th>
               <th className="p-3">Finca / Lote</th>
-              <th className="p-3">Listo venta</th>
-              <th className="p-3">Mal estado</th>
+              <th className="p-3">Buen estado (Listo venta)</th>
+              <th className="p-3">Mal estado (Menor calidad)</th>
+              <th className="p-3">Total venta</th>
               <th className="p-3">Jornales</th>
-              <th className="p-3">Estado</th>
               <th className="p-3">Responsable</th>
-              <th className="p-3">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-200 text-sm font-bold text-stone-900">
             {visibleHistory.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-5 text-center text-stone-500 font-semibold">
-                  Todavia no hay cosechas guardadas.
+                <td colSpan={7} className="p-5 text-center text-stone-500 font-semibold">
+                  Todavia no hay cosechas listas para la venta.
                 </td>
               </tr>
             ) : (
               visibleHistory.map((rec) => {
                 const finca = fincas.find((f) => f.id === rec.fincaId);
                 const zona = zonas.find((z) => z.id === rec.zonaId);
-                const isEditing = editingId === rec.id;
+                const kilosBuen = getKilosBuenEstado(rec);
+                const kilosMal = getKilosMalEstado(rec);
+                const totalFila = Math.round((kilosBuen + kilosMal) * 10) / 10;
 
                 return (
-                  <React.Fragment key={rec.id}>
-                    {/* Fila de datos de la recolección (modo lectura o edición en línea) */}
-                    <tr className="hover:bg-stone-50 align-top">
-                      <td className="p-3 whitespace-nowrap">{rec.fecha}</td>
-                      <td className="p-3">
-                        <span className="block font-extrabold">{finca?.nombre || 'Finca'}</span>
-                        <span className="text-xs font-normal text-stone-500">{zona?.nombreZona || 'Lote'}</span>
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <input type="number" min="1" value={editForm.kilosBaba} onChange={(e) => setEditForm((prev) => ({ ...prev, kilosBaba: e.target.value }))} className="w-24 px-2 py-1 rounded-lg border border-stone-300" />
-                        ) : `${rec.kilosBaba} Kg`}
-                      </td>
-                      <td className="p-3 text-rose-700">{isEditing ? (<input type="number" min="0" value={editForm.kilosMalEstado} onChange={(e) => setEditForm((prev) => ({ ...prev, kilosMalEstado: e.target.value }))} className="w-24 px-2 py-1 rounded-lg border border-stone-300" />) : `${rec.kilosMalEstado || 0} Kg`}</td>
-                      <td className="p-3">{rec.jornalesUtilizados}</td>
-                      <td className="p-3">
-                        <span className="px-2.5 py-1 rounded-xl text-xs font-extrabold border bg-amber-100 border-amber-400 text-amber-950">
-                          {rec.estadoProceso === 'seco_listo' ? 'Proceso finalizado' : STATE_LABELS[rec.estadoProceso]}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <input type="text" value={editForm.responsable} onChange={(e) => setEditForm((prev) => ({ ...prev, responsable: e.target.value }))} className="w-full px-2 py-1 rounded-lg border border-stone-300" />
-                        ) : rec.responsable}
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <textarea value={editForm.notas} onChange={(e) => setEditForm((prev) => ({ ...prev, notas: e.target.value }))} className="w-full px-2 py-1 rounded-lg border border-stone-300 text-sm" rows={2} />
-                            <div className="flex gap-2">
-                              <button type="button" onClick={saveEdit} className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-black flex items-center gap-1"><Save className="w-3.5 h-3.5" />Guardar</button>
-                              <button type="button" onClick={() => setEditingId(null)} className="px-3 py-1.5 rounded-lg bg-stone-200 text-stone-800 text-xs font-black">Cancelar</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => startEdit(rec)} className="px-3 py-1.5 rounded-lg bg-stone-900 text-white text-xs font-black flex items-center gap-1"><Edit3 className="w-3.5 h-3.5" />Editar</button>
-                            <button type="button" onClick={() => startFinalize(rec)} className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-black flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />Proceso finalizado</button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                    {/* Fila desplegable para registrar los kilos secos finales y cerrar el proceso */}
-                    {finalizingId === rec.id && (
-                      <tr className="bg-emerald-50">
-                        <td colSpan={8} className="p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                            <div>
-                              <label className="block text-xs font-black uppercase text-emerald-900 mb-1">Kilos secos obtenidos</label>
-                              <input type="number" min="1" value={kilosSecoFinales} onChange={(e) => setKilosSecoFinales(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-emerald-300 bg-white" />
-                            </div>
-                            <div className="md:col-span-2">
-                              <label className="block text-xs font-black uppercase text-emerald-900 mb-1">Observaciones</label>
-                              <input type="text" value={notasFinalizacion} onChange={(e) => setNotasFinalizacion(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-emerald-300 bg-white" />
-                            </div>
-                            <div className="md:col-span-3 flex flex-wrap gap-2">
-                              <button type="button" onClick={saveFinalize} className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-black">Guardar finalizacion</button>
-                              <button type="button" onClick={() => setFinalizingId(null)} className="px-4 py-2 rounded-lg bg-stone-200 text-stone-800 text-sm font-black">Cancelar</button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+                  <tr key={rec.id} className="hover:bg-stone-50 align-top">
+                    <td className="p-3 whitespace-nowrap">{rec.fecha}</td>
+                    <td className="p-3">
+                      <span className="block font-extrabold">{finca?.nombre || 'Finca'}</span>
+                      <span className="text-xs font-normal text-stone-500">{zona?.nombreZona || 'General'}</span>
+                    </td>
+                    <td className="p-3 text-emerald-800">{kilosBuen} Kg</td>
+                    <td className="p-3 text-rose-700">{kilosMal} Kg</td>
+                    <td className="p-3 font-black text-amber-950">{totalFila} Kg</td>
+                    <td className="p-3">{rec.jornalesUtilizados}</td>
+                    <td className="p-3">{rec.responsable}</td>
+                  </tr>
                 );
               })
             )}
           </tbody>
+          {visibleHistory.length > 0 && (
+            <tfoot>
+              <tr className="bg-amber-50 border-t-2 border-amber-400 text-sm font-black">
+                <td colSpan={2} className="p-3 text-amber-950 uppercase">Totales</td>
+                <td className="p-3 text-emerald-800">{totalBuenEstado} Kg</td>
+                <td className="p-3 text-rose-700">{totalMalEstado} Kg</td>
+                <td className="p-3 text-amber-950">{totalGeneral} Kg</td>
+                <td colSpan={2} className="p-3 text-xs font-bold text-stone-600">
+                  {visibleHistory.length} registro(s) listos para venta
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

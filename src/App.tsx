@@ -774,12 +774,20 @@ export default function App() {
   const ventasVisibles = ventas;
   const cajaVisible = caja;
 
-  // Cálculo de totales globales visibles: kilos de cacao seco listo y saldo neto de caja
-  const kilosBodega = inventarioVisible.reduce((acc, curr) => acc + curr.cantidadKg, 0);
+  // Cálculo de totales globales visibles: kilos disponibles por vender (cosechado - vendido) y saldo neto de caja
   const kilosCosechasListas = recoleccionesVisibles
     .filter((rec) => rec.estadoProceso === 'seco_listo')
-    .reduce((acc, curr) => acc + (curr.kilosSecoObtenidos ?? curr.rendimientoEstimadoSeco ?? 0), 0);
-  const totalKilosInventario = inventarioVisible.length > 0 ? kilosBodega : kilosCosechasListas;
+    .reduce(
+      (acc, curr) =>
+        acc +
+        (curr.kilosSecoObtenidos ?? curr.rendimientoEstimadoSeco ?? curr.kilosBaba ?? 0) +
+        (curr.kilosMalEstado || 0),
+      0
+    );
+  const kilosVendidosConfirmados = ventasVisibles
+    .filter((v) => v.estadoVenta !== 'anulada')
+    .reduce((acc, v) => acc + (v.kilosVendidos || 0), 0);
+  const totalKilosInventario = Math.max(0, Math.round((kilosCosechasListas - kilosVendidosConfirmados) * 10) / 10);
   const cajaIngresos = cajaVisible.filter(c => c.tipo === 'ingreso').reduce((a, b) => a + b.monto, 0);
   const cajaEgresos = cajaVisible.filter(c => c.tipo === 'egreso').reduce((a, b) => a + b.monto, 0);
   const cajaSaldoDia = cajaIngresos - cajaEgresos;
@@ -944,6 +952,7 @@ export default function App() {
             zonas={zonasVisibles}
             recolecciones={recoleccionesVisibles}
             inventario={inventarioVisible}
+            ventas={ventasVisibles}
             onUpdateRecoleccion={handleUpdateRecoleccion}
             onUpdateInventario={handleUpdateInventario}
             onUpdateProductoInventario={handleUpdateProductoInventario}
@@ -957,6 +966,7 @@ export default function App() {
             fincas={fincasVisibles}
             clientes={clientes}
             ventas={ventasVisibles}
+            recolecciones={recoleccionesVisibles}
             caja={cajaVisible}
             onAddVenta={handleAddVenta}
             onAddGastoCaja={handleAddGastoCaja}
