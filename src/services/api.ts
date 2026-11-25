@@ -35,6 +35,25 @@ export interface ApiClientRow {
   finca: string | null;
 }
 
+/** Datos públicos del perfil de usuario; nunca incluye password_hash. */
+export interface ApiUserProfile {
+  id_usuario: number;
+  cedula: string;
+  nombre_completo: string;
+  telefono: string | null;
+  correo: string | null;
+  rol: string;
+  activo: boolean;
+}
+
+/** Campos editables por el titular del perfil. */
+export interface UpdateApiUserProfileInput {
+  cedula: string;
+  nombre_completo: string;
+  telefono: string;
+  correo: string;
+}
+
 /** Fila de finca retornada por el backend. */
 export interface ApiFincaRow {
   id_finca: number;
@@ -218,6 +237,7 @@ export async function registerWithApi(input: {
   cedula: string;
   nombreCompleto: string;
   telefono?: string;
+  correo: string;
   password: string;
   nombreFinca: string;
   municipio?: string;
@@ -238,6 +258,26 @@ export async function fetchAdminClients(token: string): Promise<ApiClientRow[]> 
     headers: {
       Authorization: `Bearer ${token}`
     }
+  });
+}
+
+/** Consulta los datos públicos del perfil del usuario autenticado. */
+export async function fetchUserProfile(token: string, userId: string): Promise<ApiUserProfile> {
+  return requestJson<ApiUserProfile>(`/usuarios/${encodeURIComponent(userId)}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+/** Actualiza los datos personales del usuario autenticado. */
+export async function updateUserProfile(
+  token: string,
+  userId: string,
+  input: UpdateApiUserProfileInput
+): Promise<ApiUserProfile> {
+  return requestJson<ApiUserProfile>(`/usuarios/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
   });
 }
 

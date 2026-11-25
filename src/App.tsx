@@ -15,6 +15,7 @@ import { InventarioViewClean as InventarioView } from './components/InventarioVi
 import { VentasCajaView } from './components/VentasCajaView';
 import { AdminClientsView } from './components/AdminClientsView';
 import { DatabaseSetupView } from './components/DatabaseSetupView';
+import { ProfileView } from './components/ProfileView';
 import {
   createClienteComprador, createFinca, createInventario, createMovimientoCaja, createRecoleccion,
   createVenta, createZona, deleteFinca, deleteZona, fetchAdminClients, fetchFincas,
@@ -22,6 +23,7 @@ import {
   fetchClientesCompradores, resetUserPassword, updateFinca, updateInventario,
   updateRecoleccion
 } from './services/api';
+import type { ApiUserProfile } from './services/api';
 
 import { 
   Finca, 
@@ -63,6 +65,8 @@ const mapAdminClientRow = (row: {
   fechaRegistro: new Date().toISOString().split('T')[0]
 });
 
+const profilePhotoStorageKey = (userId: string) => `cacao_profile_photo:${encodeURIComponent(userId)}`;
+
 // Restablece los estados principales del espacio de trabajo a los arreglos iniciales
 const resetWorkspaceState = (
   setFincas: React.Dispatch<React.SetStateAction<Finca[]>>,
@@ -83,29 +87,29 @@ const resetWorkspaceState = (
 };
 
 export default function App() {
-  // Pestaña activa: inicia en dashboard si ya existe sesión guardada en localStorage, o en auth si no
+  // La sesión dura mientras la pestaña esté abierta; sessionStorage se limpia al cerrarla
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    const token = localStorage.getItem('cacao_token');
-    const saved = localStorage.getItem('cacao_user');
+    const token = sessionStorage.getItem('cacao_token');
+    const saved = sessionStorage.getItem('cacao_user');
     return token && saved ? 'dashboard' : 'auth';
   });
 
-  // Estado del usuario autenticado recuperado de localStorage (limpia datos si el JSON es inválido)
+  // Estado del usuario autenticado recuperado de sessionStorage
   const [currentUser, setCurrentUser] = useState<Usuario | null>(() => {
-    const token = localStorage.getItem('cacao_token');
-    const saved = localStorage.getItem('cacao_user');
+    const token = sessionStorage.getItem('cacao_token');
+    const saved = sessionStorage.getItem('cacao_user');
     if (!saved || !token) return null;
     try {
       return JSON.parse(saved) as Usuario;
     } catch {
-      localStorage.removeItem('cacao_user');
-      localStorage.removeItem('cacao_token');
+      sessionStorage.removeItem('cacao_user');
+      sessionStorage.removeItem('cacao_token');
       return null;
     }
   });
 
   // Token JWT de autenticación, lista de usuarios para el panel admin y bandera de carga inicial
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('cacao_token') || '');
+  const [authToken, setAuthToken] = useState(() => sessionStorage.getItem('cacao_token') || '');
   const [adminUsers, setAdminUsers] = useState<Usuario[]>([]);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
@@ -143,21 +147,21 @@ export default function App() {
   const [quickOpenSale, setQuickOpenSale] = useState(false);
   const [quickOpenExpense, setQuickOpenExpense] = useState(false);
 
-  // Persiste o elimina la información del usuario activo en localStorage
+  // Persiste o elimina la información del usuario activo en la sesión de esta pestaña
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('cacao_user', JSON.stringify(currentUser));
+      sessionStorage.setItem('cacao_user', JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem('cacao_user');
+      sessionStorage.removeItem('cacao_user');
     }
   }, [currentUser]);
 
-  // Persiste o elimina el token JWT en localStorage
+  // Persiste o elimina el token JWT en la sesión de esta pestaña
   useEffect(() => {
     if (authToken) {
-      localStorage.setItem('cacao_token', authToken);
+      sessionStorage.setItem('cacao_token', authToken);
     } else {
-      localStorage.removeItem('cacao_token');
+      sessionStorage.removeItem('cacao_token');
     }
   }, [authToken]);
 
@@ -168,8 +172,8 @@ export default function App() {
       setCurrentUser(null);
       setWorkspaceLoaded(false);
       setActiveTab('auth');
-      localStorage.removeItem('cacao_token');
-      localStorage.removeItem('cacao_user');
+      sessionStorage.removeItem('cacao_token');
+      sessionStorage.removeItem('cacao_user');
     };
 
     window.addEventListener('cacao-session-invalid', handleInvalidSession);
@@ -178,6 +182,8 @@ export default function App() {
 
   // Limpia claves antiguas de almacenamiento local al montar la aplicación
   useEffect(() => {
+    localStorage.removeItem('cacao_token');
+    localStorage.removeItem('cacao_user');
     localStorage.removeItem('cacao_recolecciones');
     Object.keys(localStorage)
       .filter((key) => key.startsWith('cacao_workspace:'))
@@ -338,14 +344,21 @@ export default function App() {
 
   // Manejadores de autenticación (inicio de sesión, registro y cierre de sesión)
   const handleLoginSuccess = (user: Usuario, token: string) => {
-    setCurrentUser(user);
+    setCurrentUser({
+      ...user,
+      fotoPerfil: localStorage.getItem(profilePhotoStorageKey(user.id)) || user.fotoPerfil
+    });
     setAuthToken(token);
     setActiveTab('dashboard');
   };
 
   const handleRegisterSuccess = (newUser: Usuario, token: string) => {
     const fincaId = newUser.fincaId || `finca-${newUser.id}`;
-    const userWithFinca = { ...newUser, fincaId };
+    const userWithFinca = {
+      ...newUser,
+      fincaId,
+      fotoPerfil: localStorage.getItem(profilePhotoStorageKey(newUser.id)) || newUser.fotoPerfil
+    };
     setCurrentUser(userWithFinca);
     setAuthToken(token);
     setActiveTab('dashboard');
@@ -362,6 +375,29 @@ export default function App() {
     setVentas([]);
     setCaja([]);
     setActiveTab('auth');
+  };
+
+  const handleProfileUpdated = (profile: ApiUserProfile) => {
+    if (!currentUser) return;
+    const updatedUser: Usuario = {
+      ...currentUser,
+      cedula: profile.cedula,
+      nombreCompleto: profile.nombre_completo,
+      celularWhatsApp: profile.telefono || '',
+      correo: profile.correo || '',
+      rol: profile.rol === 'admin' ? 'admin' : currentUser.rol,
+      activo: profile.activo
+    };
+    setCurrentUser(updatedUser);
+    sessionStorage.setItem('cacao_user', JSON.stringify(updatedUser));
+  };
+
+  const handleProfilePhotoUpdated = (photoUrl: string) => {
+    if (!currentUser) return;
+    const updatedUser: Usuario = { ...currentUser, fotoPerfil: photoUrl };
+    setCurrentUser(updatedUser);
+    localStorage.setItem(profilePhotoStorageKey(currentUser.id), photoUrl);
+    sessionStorage.setItem('cacao_user', JSON.stringify(updatedUser));
   };
 
   // Funciones auxiliares de mapeo entre el modelo Finca del frontend y el formato de la API
@@ -794,6 +830,10 @@ export default function App() {
       title: 'Pantalla de Inicio / Dashboard Principal',
       speech: 'Página de inicio. Aquí ves los tres recuadros de kilos registrados, fincas y caja del día, más los cuatro botones grandes para registrar cosecha, ver el historial, registrar venta o caja diaria.'
     },
+    perfil: {
+      title: 'Perfil de usuario',
+      speech: 'Consulta y actualiza tus datos personales, correo y teléfono. El rol y estado de la cuenta son de solo lectura.'
+    },
     fincas: {
       title: 'Módulo de Fincas y Lotes de Cultivo',
       speech: 'Módulo de Fincas y Lotes. Muestra las tarjetas con el nombre del propietario, vereda y hectáreas de cacao. Puedes agregar nuevas fincas o lotes.'
@@ -878,10 +918,23 @@ export default function App() {
         currentUser={currentUser}
         isAdmin={isAdmin}
         onLogout={handleLogout}
+        onOpenProfile={() => setActiveTab('perfil')}
       />
 
       {/* 3. Área Principal de Contenido del Módulo */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
+
+        {/* Perfil del usuario autenticado */}
+        {activeTab === 'perfil' && (
+          <ProfileView
+            token={authToken}
+            userId={currentUser.id}
+            onBack={() => setActiveTab('dashboard')}
+            onUserUpdated={handleProfileUpdated}
+            photoUrl={currentUser.fotoPerfil}
+            onPhotoUpdated={handleProfilePhotoUpdated}
+          />
+        )}
 
         {/* Módulo de inicio / resumen general */}
         {activeTab === 'dashboard' && (

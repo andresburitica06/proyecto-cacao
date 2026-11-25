@@ -10,6 +10,7 @@ import {
   EyeOff,
   Lock,
   LogIn,
+  Mail,
   Phone,
   ShieldCheck,
   Sprout,
@@ -50,6 +51,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [regNombre, setRegNombre] = useState('');
   const [regCedula, setRegCedula] = useState('');
   const [regCelular, setRegCelular] = useState('');
+  const [regCorreo, setRegCorreo] = useState('');
   const [regFincaVereda, setRegFincaVereda] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
@@ -112,6 +114,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
     if (!regNombre.trim()) return setRegError('Ingresa tu nombre.');
     if (!regCedula.trim()) return setRegError('Ingresa tu cédula.');
     if (!regCelular.trim()) return setRegError('Ingresa tu celular.');
+    if (!regCorreo.trim()) return setRegError('Ingresa tu correo electrónico.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regCorreo.trim())) return setRegError('Ingresa un correo electrónico válido.');
     if (!regFincaVereda.trim()) return setRegError('Ingresa el nombre de tu finca.');
     if (!regPassword.trim() || regPassword.length < 4) return setRegError('La contraseña debe tener al menos 4 caracteres.');
 
@@ -121,6 +125,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         cedula: regCedula.trim(),
         nombreCompleto: regNombre.trim(),
         telefono: regCelular.trim(),
+        correo: regCorreo.trim().toLowerCase(),
         password: regPassword,
         nombreFinca: regFincaVereda.trim(),
         municipio: 'Por completar'
@@ -131,6 +136,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         nombreCompleto: regNombre.trim(),
         cedula: regCedula.trim(),
         celularWhatsApp: regCelular.trim(),
+        correo: regCorreo.trim().toLowerCase(),
         nombreFincaVereda: regFincaVereda.trim(),
         fincaId: response.user.fincaId ? String(response.user.fincaId) : undefined,
         rol: 'productor',
@@ -362,6 +368,24 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     placeholder="Ej: 311 234 5678"
                     className="w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-stone-800 font-extrabold text-sm">Correo electrónico</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-emerald-700">
+                      <Mail className="w-5 h-5" />
+                    </div>
+                    <input
+                      type="email"
+                      value={regCorreo}
+                      onChange={(e) => setRegCorreo(e.target.value)}
+                      placeholder="Ej: nombre@correo.com"
+                      autoComplete="email"
+                      required
+                      className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">

@@ -19,6 +19,7 @@ interface NavbarProps {
   currentUser?: Usuario | null;
   isAdmin?: boolean;
   onLogout?: () => void;
+  onOpenProfile?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -28,7 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   cajaSaldoDia,
   currentUser,
   isAdmin = false,
-  onLogout
+  onLogout,
+  onOpenProfile
 }) => {
   // Cambia la pestaña activa y anuncia el cambio mediante el asistente de voz
   const handleTabClick = (tab: ActiveTab, label: string) => {
@@ -138,10 +140,24 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex flex-wrap items-center justify-center md:justify-end gap-3">
             
             {/* Bloque del usuario activo e información de finca */}
-            <div className="flex items-center gap-2.5 bg-amber-950/90 border-2 border-amber-700/80 px-3.5 py-2 rounded-2xl text-xs sm:text-sm text-amber-100 font-bold shadow">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 font-black flex items-center justify-center text-lg border-2 border-amber-300 shrink-0 shadow-sm">
-                👨‍🌾
-              </div>
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              aria-label="Abrir perfil de usuario"
+              title="Ver y actualizar perfil"
+              className="flex items-center gap-2.5 bg-amber-950/90 border-2 border-amber-700/80 px-3.5 py-2 rounded-2xl text-xs sm:text-sm text-amber-100 font-bold shadow cursor-pointer hover:border-amber-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300 transition-colors"
+            >
+              {currentUser?.fotoPerfil ? (
+                <img
+                  src={currentUser.fotoPerfil}
+                  alt=""
+                  className="w-9 h-9 rounded-xl border-2 border-amber-300 object-cover shrink-0 shadow-sm"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 font-black flex items-center justify-center text-lg border-2 border-amber-300 shrink-0 shadow-sm">
+                  👨‍🌾
+                </div>
+              )}
               <div className="text-left">
                 <p className="text-[10px] text-amber-300/90 uppercase font-black tracking-wider flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
@@ -156,7 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </p>
                 )}
               </div>
-            </div>
+            </button>
 
             {/* BOTÓN INDEPENDIENTE Y DESTACADO DE CERRAR SESIÓN / SALIR */}
             {onLogout && (
