@@ -25,6 +25,24 @@ import {
 } from './services/api';
 import type { ApiUserProfile } from './services/api';
 
+// Imágenes de fondo por módulo (Mockup)
+import bgInicioImg from './assets/images/bg_inicio_cacao_1795612273947.jpg';
+import bgFincasImg from './assets/images/bg_fincas_paisaje_1795612274632.jpg';
+import bgCosechaImg from './assets/images/bg_cosecha_secado_1795612274971.jpg';
+import bgHistorialesImg from './assets/images/bg_historiales_trabajo_1795612275384.jpg';
+import bgVentasImg from './assets/images/bg_ventas_mula_1795612276046.jpg';
+
+const MODULE_BACKGROUNDS: Record<string, { src: string; alt: string }> = {
+  dashboard:     { src: bgInicioImg,      alt: 'Mazorcas de cacao' },
+  fincas:        { src: bgFincasImg,      alt: 'Paisaje finca cacaotera' },
+  recoleccion:   { src: bgCosechaImg,     alt: 'Cosecha de cacao' },
+  inventario:    { src: bgHistorialesImg, alt: 'Trabajo en finca' },
+  ventas_caja:   { src: bgVentasImg,      alt: 'Venta de cacao' },
+  clientes:      { src: bgInicioImg,      alt: 'Panel administrativo' },
+  configuracion: { src: bgInicioImg,      alt: 'Base de datos' },
+  perfil:        { src: bgInicioImg,      alt: 'Perfil de usuario' },
+};
+
 import { 
   Finca, 
   ZonaCultivo, 
@@ -920,7 +938,17 @@ export default function App() {
       />
 
       {/* 3. Área Principal de Contenido del Módulo */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
+      <main className="flex-1 relative overflow-hidden bg-[#1C0D02]">
+        <img
+          src={MODULE_BACKGROUNDS[activeTab]?.src || bgInicioImg}
+          alt={MODULE_BACKGROUNDS[activeTab]?.alt || ''}
+          className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-b from-[#FAF6F0]/25 via-[#FAF6F0]/35 to-[#1C0D02]/45 backdrop-blur-[1.5px] pointer-events-none"
+        />
+        <div className="relative z-10 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
 
         {/* Perfil del usuario autenticado */}
         {activeTab === 'perfil' && (
@@ -1027,6 +1055,7 @@ export default function App() {
 
         {activeTab === 'configuracion' && isAdmin && <DatabaseSetupView />}
 
+        </div>
       </main>
 
       {/* 4. Footer Rústico Campesino */}
