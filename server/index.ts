@@ -191,6 +191,56 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token: sign(user.id_usuario, user.rol), user: { id: user.id_usuario, rol: user.rol, nombreCompleto: user.nombre_completo, fincaId: user.id_finca, fincaNombre: user.finca_nombre } });
 });
 
+// -----------------------------------------------------------------------------
+// Recuperación de contraseña (auto-servicio sin intervención del admin)
+// -----------------------------------------------------------------------------
+
+/**
+ * POST /api/auth/recover
+ * Restablece la contraseña del usuario verificando cédula + celular.
+ * Bloquea cuentas admin. Límite: 5 intentos fallidos por cédula cada 15 min.
+ */
+const recoverAttempts = new Map<string, { count: number; firstAttempt: number }>();
+
+app.post('/api/auth/recover', async (req, res) => {
+  const { cedula, celular, nuevaPassword } = req.body;
+  if (!cedula || !celular || !nuevaPassword || String(nuevaPassword).trim().length < 4) {
+    return res.status(400).json({ message: 'Completa todos los campos. La contraseña debe tener mínimo 4 caracteres.' });
+  }
+
+  const key = String(cedula).trim();
+  const now = Date.now();
+  const attempts = recoverAttempts.get(key);
+  if (attempts) {
+    if (now - attempts.firstAttempt < 15 * 60 * 1000) {
+      if (attempts.count >= 5) {
+        return res.status(429).json({ message: 'Demasiados intentos fallidos. Intenta de nuevo en 15 minutos.' });
+      }
+    } else {
+      recoverAttempts.delete(key);
+    }
+  }
+
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT u.id_usuario, u.rol FROM usuarios u
+     WHERE u.cedula = ? AND u.telefono = ? AND u.activo = 1
+     LIMIT 1`,
+    [String(cedula).trim(), String(celular).trim()]
+  );
+
+  const user = rows[0];
+  if (!user || user.rol === 'admin') {
+    const cur = recoverAttempts.get(key) || { count: 0, firstAttempt: now };
+    recoverAttempts.set(key, { count: cur.count + 1, firstAttempt: cur.firstAttempt });
+    return res.status(400).json({ message: 'Los datos no coinciden con ningún usuario registrado.' });
+  }
+
+  const hash = await bcrypt.hash(String(nuevaPassword).trim(), 12);
+  await pool.execute('UPDATE usuarios SET password_hash = ? WHERE id_usuario = ?', [hash, user.id_usuario]);
+  recoverAttempts.delete(key);
+  res.json({ ok: true, message: 'Contraseña actualizada correctamente.' });
+});
+
 type PublicUserProfile = RowDataPacket & {
   id_usuario: number;
   cedula: string;

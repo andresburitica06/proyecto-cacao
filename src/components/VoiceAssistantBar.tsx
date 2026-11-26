@@ -4,18 +4,20 @@
  * cambiar la velocidad de voz, silenciar el audio y desplegar instrucciones de uso.
  */
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Play, Square, FastForward, Info } from 'lucide-react';
+import { Volume2, VolumeX, Play, Square, FastForward, Info, Check, AudioLines } from 'lucide-react';
 import { voiceAssistant } from '../services/voiceAssistant';
 
 // Propiedades que indican el título y el texto descriptivo de la pantalla activa
 interface VoiceAssistantBarProps {
   currentScreenTitle: string;
   screenTextToRead: string;
+  variant?: 'bar' | 'inline-light';
 }
 
 export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
   currentScreenTitle,
-  screenTextToRead
+  screenTextToRead,
+  variant = 'bar',
 }) => {
   // Estados de reproducción, texto en curso, silencio, velocidad y panel informativo
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -57,6 +59,100 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
     setSpeed(newSpeed);
     voiceAssistant.setRate(newSpeed);
   };
+
+  if (variant === 'inline-light') {
+    return (
+      <div className="relative flex flex-col items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={handlePlayScreen}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-2xs ${
+              isSpeaking
+                ? 'bg-[#F3D7C4] text-[#8E3600] border-[#D3845E] ring-2 ring-[#D3845E]/30'
+                : 'bg-[#FBF1EA] hover:bg-[#F7E5D8] text-[#A34818] border-[#E8B89A]'
+            }`}
+          >
+            <Volume2 className="w-3.5 h-3.5 shrink-0" />
+            <span>Escuchar Pantalla</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleChangeSpeed}
+            title="Cambiar velocidad de lectura"
+            className="px-3.5 py-1.5 rounded-full bg-[#F4EFE6] hover:bg-[#EAE1D3] text-[#3E2D23] border border-[#DDD3C5] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <AudioLines className="w-3.5 h-3.5 text-[#5C4A38] shrink-0" />
+            <span>{speed < 1.0 ? 'Voz Lenta' : 'Voz Normal'}</span>
+          </button>
+
+          {isSpeaking && (
+            <button
+              type="button"
+              onClick={handleStop}
+              title="Detener voz"
+              className="px-3 py-1.5 rounded-full bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              <span>Pausar Voz</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleToggleMute}
+            title={isMuted ? 'Activar sonido del asistente' : 'Silenciar sonido del asistente'}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              isMuted
+                ? 'bg-rose-700 hover:bg-rose-600 text-white border-rose-600'
+                : 'bg-[#82AD91] hover:bg-[#709C80] text-white border-[#729D81]'
+            }`}
+          >
+            {isMuted ? (
+              <>
+                <VolumeX className="w-3.5 h-3.5 shrink-0" />
+                <span>Silenciado</span>
+              </>
+            ) : (
+              <>
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Sonido Activo</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            title="Instrucciones del sistema"
+            aria-label="Instrucciones de ayuda por voz"
+            className="w-7 h-7 rounded-full border border-[#DDD3C5] bg-[#FAF6F0] hover:bg-[#EFE7DA] text-[#3E2D23] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+          >
+            <Info className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className="max-w-sm p-3.5 bg-white border border-[#E6DDD0] rounded-2xl text-[#2C1A11] text-xs shadow-lg flex items-start justify-between gap-3 animate-fadeIn">
+            <div className="space-y-1">
+              <p className="font-bold text-[#1C0D02]">¿Cómo funciona la ayuda de voz?</p>
+              <p className="text-[#5C4A38] leading-relaxed">
+                Presiona <strong>Escuchar Pantalla</strong> para oír en voz alta las instrucciones y los campos disponibles en esta vista.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsExpanded(false)}
+              className="px-2.5 py-1 rounded-lg bg-[#B84A00] hover:bg-[#D95B00] text-white font-bold text-[11px] cursor-pointer shrink-0"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="sticky top-0 z-40 bg-amber-900 border-b-4 border-amber-700 text-amber-50 shadow-md">

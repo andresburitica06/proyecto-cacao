@@ -21,7 +21,7 @@ import {
   createVenta, createZona, deleteFinca, deleteZona, fetchAdminClients, fetchFincas,
   fetchInventario, fetchMovimientosCaja, fetchRecolecciones, fetchVentas, fetchZonas,
   fetchClientesCompradores, resetUserPassword, updateFinca, updateInventario,
-  updateRecoleccion
+  updateRecoleccion, recoverPasswordApi
 } from './services/api';
 import type { ApiUserProfile } from './services/api';
 
@@ -871,39 +871,29 @@ export default function App() {
   // Renderizado Aislado e Independiente para Autenticación (Login / Registro)
   if (activeTab === 'auth' || !currentUser) {
     return (
-      <div className="min-h-screen bg-[#FDFBF7] text-stone-900 flex flex-col font-sans selection:bg-amber-300 selection:text-amber-950">
-        
-        {/* Lector de Voz Superior */}
-        <VoiceAssistantBar
-          currentScreenTitle={screenTitles.auth.title}
-          screenTextToRead={screenTitles.auth.speech}
-        />
-
-        {/* Header Sencillo Aislado para Login */}
-        <div className="bg-stone-950 text-amber-100 py-3 px-4 border-b-4 border-amber-800 text-center flex items-center justify-between max-w-7xl w-full mx-auto">
-          <div className="flex items-center gap-2 font-black font-serif text-lg text-amber-200">
-            <span>🍫</span>
-            <span>Sistema de Gestión de Cacao - ADSO</span>
-          </div>
-          <span className="bg-amber-800/80 text-amber-200 text-xs font-bold px-2.5 py-1 rounded-xl border border-amber-600 hidden sm:inline-block">
-            Acceso Rural Campesino
-          </span>
-        </div>
-
-        {/* Vista Completa Independiente de Login y Registro */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FAF6F0] text-[#2C1A11] flex flex-col font-sans selection:bg-amber-200 selection:text-[#1C0D02]">
+        <main className="flex-1 flex flex-col min-h-0">
           <AuthView
             currentUser={currentUser}
             onLoginSuccess={handleLoginSuccess}
             onRegisterSuccess={handleRegisterSuccess}
             onLogout={handleLogout}
+            screenTitle={screenTitles.auth.title}
+            screenTextToRead={screenTitles.auth.speech}
+            onRecoverPassword={async (cedula, celular, nuevaPassword) => {
+              try {
+                await recoverPasswordApi(cedula, celular, nuevaPassword);
+                return true;
+              } catch {
+                return false;
+              }
+            }}
           />
         </main>
 
-        <footer className="bg-stone-950 text-amber-200/80 border-t-4 border-amber-900 py-4 px-4 text-center text-xs font-medium">
-          Sistema de Gestión de Cacao ADSO © 2026 • Diseñado para Pequeños y Medianor Cacaoteros
+        <footer className="bg-[#2B1B12] text-[#E6D6C3] border-t-2 border-[#B84A00] py-3 px-4 text-center text-xs font-medium shrink-0">
+          Sistema de Gestión de Cacao ADSO © 2026 - Diseñado para Pequeños y Medianos Cacaoteros
         </footer>
-
       </div>
     );
   }

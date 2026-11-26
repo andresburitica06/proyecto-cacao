@@ -1,85 +1,127 @@
 /**
- * Vista de autenticación del sistema (inicio de sesión y registro de productores).
- * Valida credenciales contra la API, anuncia mensajes con el asistente de voz
- * y notifica al componente padre cuando el acceso o registro es exitoso.
+ * Vista de autenticación del sistema (inicio de sesión, registro y recuperación de contraseña).
+ * Diseño Mockup a pantalla completa adaptado 100% a la lógica y validaciones reales de la API.
  */
 import React, { useState } from 'react';
 import {
   ArrowRight,
+  BookOpen,
+  CheckCircle2,
   Eye,
   EyeOff,
+  KeyRound,
+  Leaf,
   Lock,
   LogIn,
-  Mail,
   Phone,
   ShieldCheck,
-  Sprout,
   User,
   UserCheck,
   UserPlus,
-  Volume2
+  Volume2,
 } from 'lucide-react';
+import cacaoHeroImg from '../assets/images/cacao_plantation_hero_1795534812719.jpg';
 import { voiceAssistant } from '../services/voiceAssistant';
 import { Usuario } from '../types';
-import { loginWithApi, registerWithApi } from '../services/api';
+import { loginWithApi, registerWithApi, recoverPasswordApi } from '../services/api';
+import { VoiceAssistantBar } from './VoiceAssistantBar';
 
-// Propiedades de sesión actual y callbacks de autenticación
+const CacaoPodOutlineIcon: React.FC<{ className?: string }> = ({ className = 'w-7 h-7' }) => (
+  <svg
+    viewBox="0 0 48 48"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M24 5c-7.5 3.8-13 11.4-13 20.2 0 7.7 5.1 14.3 13 17.8 7.9-3.5 13-10.1 13-17.8C37 16.4 31.5 8.8 24 5Z" />
+    <path d="M24 5v38" />
+    <path d="M24 7c-4.2 5-6.6 11.4-6.6 18.2 0 6.5 2.4 12.6 6.6 17.5" />
+    <path d="M24 7c4.2 5 6.6 11.4 6.6 18.2 0 6.5-2.4 12.6-6.6 17.5" />
+    <path d="M24 2v3" />
+  </svg>
+);
+
+const BotanicalSketchCorner: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <svg
+    viewBox="0 0 280 280"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.25"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M20 250C65 190 120 135 210 65" />
+    <path d="M90 175C62 152 44 115 58 76c34 10 64 38 66 76" />
+    <path d="M58 76c16 32 30 62 32 99" />
+    <path d="M148 116C136 82 146 42 182 18c26 24 34 62 16 94" />
+    <path d="M182 18c-8 32-18 62-34 98" />
+    <path d="M174 122c-22 10-38 34-38 62 0 24 14 46 38 56 24-10 38-32 38-56 0-28-16-52-38-62Z" />
+    <path d="M174 122v118" />
+    <path d="M174 126c-12 14-18 34-18 56 0 20 6 40 18 54" />
+    <path d="M174 126c12 14 18 34 18 56 0 20-6 40-18 54" />
+    <path d="M124 218c28 18 64 16 98-6" />
+  </svg>
+);
+
 interface AuthViewProps {
   currentUser: Usuario | null;
   onLoginSuccess: (user: Usuario, token: string) => void;
   onRegisterSuccess: (newUser: Usuario, token: string) => void;
   onLogout?: () => void;
+  onRecoverPassword?: (cedula: string, celular: string, nuevaPassword: string) => Promise<boolean>;
+  screenTitle?: string;
+  screenTextToRead?: string;
 }
 
 export const AuthView: React.FC<AuthViewProps> = ({
-  currentUser,
   onLoginSuccess,
   onRegisterSuccess,
-  onLogout
+  onRecoverPassword,
+  screenTitle = 'Acceso al Sistema Cacaotero',
+  screenTextToRead = 'Ingresa con tu cédula y contraseña, regístrate o recupera tu clave.',
 }) => {
-  // Modo activo de la pantalla ('login' para ingreso, 'register' para crear cuenta)
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'recover'>('login');
 
-  // Estados del formulario de inicio de sesión
+  // --- Login ---
   const [loginCedula, setLoginCedula] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Estados del formulario de registro de nuevo productor
+  // --- Register ---
   const [regNombre, setRegNombre] = useState('');
   const [regCedula, setRegCedula] = useState('');
   const [regCelular, setRegCelular] = useState('');
   const [regCorreo, setRegCorreo] = useState('');
-  const [regFincaVereda, setRegFincaVereda] = useState('');
+  const [regNombreFinca, setRegNombreFinca] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState('');
   const [regLoading, setRegLoading] = useState(false);
 
-  // Reproduce un mensaje de ayuda en voz alta de forma inmediata
-  const handleSpeak = (text: string) => voiceAssistant.speak(text, true);
+  // --- Recover ---
+  const [recCedula, setRecCedula] = useState('');
+  const [recCelular, setRecCelular] = useState('');
+  const [recNewPassword, setRecNewPassword] = useState('');
+  const [recMessage, setRecMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [recLoading, setRecLoading] = useState(false);
 
-  // Valida los campos de ingreso, autentica contra la API y construye el objeto Usuario
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-
-    if (!loginCedula.trim()) {
-      setLoginError('Ingresa tu cédula.');
-      return;
-    }
-
-    if (!loginPassword.trim()) {
-      setLoginError('Ingresa tu contraseña.');
-      return;
-    }
+    if (!loginCedula.trim()) { setLoginError('Ingresa tu cédula.'); return; }
+    if (!loginPassword.trim()) { setLoginError('Ingresa tu contraseña.'); return; }
 
     setLoginLoading(true);
     try {
       const response = await loginWithApi(loginCedula.trim(), loginPassword);
-      // Normaliza los datos devueltos por la API al modelo Usuario del frontend
       const user: Usuario = {
         id: String(response.user.id),
         nombreCompleto: response.user.nombreCompleto,
@@ -91,10 +133,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
             ? response.user.fincaNombre
             : response.user.fincaId
               ? `Finca #${response.user.fincaId}`
-            : 'Por completar',
+              : 'Por completar',
         fincaId: response.user.fincaId ? String(response.user.fincaId) : undefined,
         rol: response.user.rol === 'admin' ? 'admin' : 'productor',
-        fechaRegistro: new Date().toISOString().split('T')[0]
+        fechaRegistro: new Date().toISOString().split('T')[0],
       };
 
       voiceAssistant.speak(`Bienvenido ${user.nombreCompleto}.`, true);
@@ -106,7 +148,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
-  // Valida los datos del registro, crea la cuenta y su finca inicial en la API
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
@@ -116,7 +157,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     if (!regCelular.trim()) return setRegError('Ingresa tu celular.');
     if (!regCorreo.trim()) return setRegError('Ingresa tu correo electrónico.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regCorreo.trim())) return setRegError('Ingresa un correo electrónico válido.');
-    if (!regFincaVereda.trim()) return setRegError('Ingresa el nombre de tu finca.');
+    if (!regNombreFinca.trim()) return setRegError('Ingresa el nombre de tu finca.');
     if (!regPassword.trim() || regPassword.length < 4) return setRegError('La contraseña debe tener al menos 4 caracteres.');
 
     setRegLoading(true);
@@ -127,8 +168,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
         telefono: regCelular.trim(),
         correo: regCorreo.trim().toLowerCase(),
         password: regPassword,
-        nombreFinca: regFincaVereda.trim(),
-        municipio: 'Por completar'
+        nombreFinca: regNombreFinca.trim(),
+        municipio: 'Por completar',
       });
 
       const newUser: Usuario = {
@@ -137,10 +178,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
         cedula: regCedula.trim(),
         celularWhatsApp: regCelular.trim(),
         correo: regCorreo.trim().toLowerCase(),
-        nombreFincaVereda: regFincaVereda.trim(),
+        nombreFincaVereda: regNombreFinca.trim(),
         fincaId: response.user.fincaId ? String(response.user.fincaId) : undefined,
         rol: 'productor',
-        fechaRegistro: new Date().toISOString().split('T')[0]
+        fechaRegistro: new Date().toISOString().split('T')[0],
       };
 
       voiceAssistant.speak(`Registro exitoso. Bienvenido ${newUser.nombreCompleto}.`, true);
@@ -152,305 +193,500 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
+  const handleRecoverSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecMessage(null);
+
+    if (!recCedula.trim() || !recCelular.trim()) {
+      setRecMessage({ type: 'err', text: 'Ingresa tu cédula y número de celular registrado.' });
+      return;
+    }
+    if (!recNewPassword.trim() || recNewPassword.length < 4) {
+      setRecMessage({ type: 'err', text: 'La nueva contraseña debe tener al menos 4 caracteres.' });
+      return;
+    }
+
+    setRecLoading(true);
+    try {
+      if (onRecoverPassword) {
+        const ok = await onRecoverPassword(recCedula.trim(), recCelular.trim(), recNewPassword.trim());
+        if (ok) {
+          setRecMessage({ type: 'ok', text: 'Contraseña actualizada correctamente. Ya puedes ingresar con tu nueva clave.' });
+          voiceAssistant.speak('Contraseña actualizada correctamente.', false);
+          setRecNewPassword('');
+        } else {
+          setRecMessage({ type: 'err', text: 'Los datos no coinciden con ningún usuario registrado.' });
+        }
+      } else {
+        await recoverPasswordApi(recCedula.trim(), recCelular.trim(), recNewPassword.trim());
+        setRecMessage({ type: 'ok', text: 'Contraseña actualizada correctamente. Ya puedes ingresar con tu nueva clave.' });
+        voiceAssistant.speak('Contraseña actualizada correctamente.', false);
+        setRecNewPassword('');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Los datos no coinciden con ningún usuario registrado.';
+      setRecMessage({ type: 'err', text: msg });
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  const loginInputClass =
+    'w-full py-2.5 rounded-xl border border-[#E5DACB] bg-[#F4ECE1] focus:bg-white focus:border-[#B84A00] focus:ring-2 focus:ring-[#B84A00]/15 focus:outline-none text-sm font-medium text-[#2C1A11] placeholder:text-[#8E7C6B] transition-colors';
+
+  const registerInputClass =
+    'w-full py-2.5 rounded-xl border border-[#DED3C3] bg-[#FDFBF7] focus:bg-white focus:border-[#B84A00] focus:ring-2 focus:ring-[#B84A00]/15 focus:outline-none text-sm font-medium text-[#2C1A11] placeholder:text-[#8E7C6B] transition-colors';
+
   return (
-    <div className="max-w-4xl mx-auto py-2 space-y-6 animate-fadeIn">
-      {/* Encabezado de bienvenida con botón de ayuda por voz */}
-      <div className="bg-stone-950 text-amber-50 rounded-3xl p-6 border-4 border-amber-800 shadow-xl">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="bg-emerald-600 text-white text-xs font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Acceso seguro
-              </span>
-              <span className="bg-amber-800 text-amber-200 text-xs font-bold px-2 py-0.5 rounded border border-amber-600">
-                ADSO Cacao
-              </span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-amber-100 font-serif">
-              {authMode === 'login' ? 'Ingresar al sistema' : 'Crear cuenta nueva'}
-            </h2>
-            <p className="text-amber-200/90 text-sm mt-1 max-w-2xl">
-              Accede con tu cédula y contraseña, o regístrate si aún no tienes cuenta.
-            </p>
+    <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 animate-fadeIn">
+      {/* Columna Izquierda: Fotografía de plantación de cacao + bloques glass oscuros */}
+      <section className="relative min-h-[400px] lg:min-h-full overflow-hidden bg-gradient-to-br from-[#102619] via-[#26180F] to-[#1C0D02] flex flex-col justify-between p-6 sm:p-10 xl:p-14">
+        <img
+          src={cacaoHeroImg}
+          alt="Mazorcas de cacao maduras en plantación tropical"
+          className="absolute inset-0 w-full h-full object-cover object-center"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-b from-[#0E261A]/50 via-black/15 to-[#160D07]/65"
+        />
+
+        {/* Tarjeta superior glassmorphic con marca ADSO Cacao */}
+        <div className="relative z-10 max-w-xl rounded-2xl bg-gradient-to-br from-[#0F2A1D]/82 via-[#2A1D13]/75 to-[#1C120B]/70 backdrop-blur-md border border-amber-200/20 px-6 py-6 sm:px-8 sm:py-7 shadow-2xl">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/25 bg-black/25 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-100/95">
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+            <span>ACCESO SEGURO</span>
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              handleSpeak(
-                authMode === 'login'
-                  ? 'Pantalla de ingreso. Escribe tu cédula y contraseña para entrar.'
-                  : 'Pantalla de registro. Completa tu nombre, cédula, celular, finca y contraseña.'
-              )
-            }
-            className="px-4 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm flex items-center justify-center gap-2 border-2 border-amber-300 shadow-lg cursor-pointer"
-          >
-            <Volume2 className="w-5 h-5" />
-            <span>Escuchar ayuda</span>
-          </button>
+          <h1 className="mt-4 font-serif text-3xl sm:text-4xl xl:text-[2.65rem] leading-[1.12] tracking-tight text-balance">
+            <span className="block font-semibold text-[#E5C185]">Sistema de Gestión</span>
+            <span className="inline-flex items-center gap-2.5 font-bold text-white mt-0.5">
+              <span>de Cacao - ADSO</span>
+              <CacaoPodOutlineIcon className="w-7 h-7 sm:w-8 sm:h-8 text-[#D7B377] shrink-0" />
+            </span>
+          </h1>
         </div>
-      </div>
 
-      {/* Aviso de sesión activa en caso de que exista un usuario autenticado */}
-      {currentUser && (
-        <div className="bg-amber-100 border-2 border-amber-600 p-4 rounded-2xl text-amber-950 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">👤</span>
-            <div>
-              <p className="font-black text-base sm:text-lg text-amber-900">
-                Sesión activa: <span className="underline">{currentUser.nombreCompleto}</span>
-              </p>
-              <p className="text-xs sm:text-sm text-stone-700 font-medium">
-                {currentUser.nombreFincaVereda} · Cédula: {currentUser.cedula}
-              </p>
+        {/* Tarjeta inferior glassmorphic "Cómo usarlo" */}
+        <div className="relative z-10 mt-8 rounded-2xl bg-[#1A110B]/82 backdrop-blur-md border border-amber-200/20 p-5 sm:p-6 shadow-2xl">
+          <div className="flex items-center gap-2.5 pb-3.5 mb-4 border-b border-white/10">
+            <BookOpen className="w-4 h-4 text-amber-100/90 shrink-0" />
+            <h3 className="text-sm sm:text-base font-bold text-white">Cómo usarlo</h3>
+            <span className="text-xs text-amber-100/75">Guía rápida de acceso.</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-xs text-amber-50/90 leading-relaxed">
+            <div className="flex items-start gap-3">
+              <span className="w-8 h-8 rounded-lg bg-[#E4EDE7] text-[#2A5C43] flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle2 className="w-4 h-4" />
+              </span>
+              <span>Ingresa si ya tienes cuenta, regístrate o recupera tu clave.</span>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <span className="w-8 h-8 rounded-lg bg-[#E4EDE7] text-[#2A5C43] flex items-center justify-center shrink-0 mt-0.5">
+                <Leaf className="w-4 h-4" />
+              </span>
+              <span>Trazabilidad completa: Cosecha, Cacao Sano, Merma y Ventas.</span>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <span className="w-8 h-8 rounded-lg bg-[#E4EDE7] text-[#2A5C43] flex items-center justify-center shrink-0 mt-0.5">
+                <Phone className="w-4 h-4" />
+              </span>
+              <span>Usa un celular activo para recuperar contraseña y recibir alertas.</span>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <span className="w-8 h-8 rounded-lg bg-[#FBECE0] text-[#B84A00] flex items-center justify-center shrink-0 mt-0.5">
+                <Volume2 className="w-4 h-4" />
+              </span>
+              <span>
+                <strong className="text-white font-semibold">Ayuda por voz:</strong> usa Escuchar
+                Pantalla arriba si prefieres oír las instrucciones en voz alta.
+              </span>
             </div>
           </div>
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs sm:text-sm border border-rose-900 shadow cursor-pointer"
-            >
-              Cerrar sesión
-            </button>
-          )}
         </div>
-      )}
+      </section>
 
-      {/* Selector de pestañas entre inicio de sesión y registro */}
-      <div className="flex flex-col sm:flex-row gap-3 bg-stone-100 p-2 rounded-2xl border border-stone-300">
-        <button
-          type="button"
-          onClick={() => setAuthMode('login')}
-          className={`flex-1 py-4 px-6 rounded-xl font-extrabold text-base sm:text-lg flex items-center justify-center gap-3 border-2 cursor-pointer ${
-            authMode === 'login'
-              ? 'bg-amber-700 text-white border-amber-900 shadow-lg'
-              : 'bg-white text-stone-700 border-stone-300 hover:bg-stone-50'
-          }`}
-        >
-          <LogIn className="w-6 h-6" />
-          <span>Ingresar</span>
-        </button>
+      {/* Columna Derecha: Fondo crema cálido con arte botánico + controles de voz + formulario */}
+      <section className="relative bg-[#FAF6F0] flex flex-col justify-between px-5 py-5 sm:px-10 sm:py-6 overflow-hidden">
+        <BotanicalSketchCorner className="pointer-events-none select-none absolute -top-6 -left-6 w-56 h-56 text-[#C7B8A3]/45" />
+        <BotanicalSketchCorner className="pointer-events-none select-none absolute -bottom-8 -right-6 w-60 h-60 text-[#C7B8A3]/45 rotate-180" />
 
-        <button
-          type="button"
-          onClick={() => setAuthMode('register')}
-          className={`flex-1 py-4 px-6 rounded-xl font-extrabold text-base sm:text-lg flex items-center justify-center gap-3 border-2 cursor-pointer ${
-            authMode === 'register'
-              ? 'bg-emerald-800 text-white border-emerald-950 shadow-lg'
-              : 'bg-white text-stone-700 border-stone-300 hover:bg-stone-50'
-          }`}
-        >
-          <UserPlus className="w-6 h-6" />
-          <span>Registrarme</span>
-        </button>
-      </div>
+        {/* Controles superiores derechos: Asistente de Voz + Acceso Rural Campesino */}
+        <div className="relative z-20 flex flex-col items-end gap-2">
+          <VoiceAssistantBar
+            variant="inline-light"
+            currentScreenTitle={screenTitle}
+            screenTextToRead={screenTextToRead}
+          />
+          <span className="inline-flex items-center rounded-full border border-[#DDD3C5] bg-[#F6F0E6]/90 px-3.5 py-1 text-[11px] font-medium text-[#5C4A38]">
+            Acceso Rural Campesino
+          </span>
+        </div>
 
-      {/* Contenedor principal con el formulario activo y la guía lateral de uso */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-7 bg-white rounded-3xl border-4 border-amber-800/30 p-6 sm:p-8 shadow-xl">
-          {/* Formulario de inicio de sesión */}
-          {authMode === 'login' && (
-            <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <div className="border-b border-stone-200 pb-4">
-                <h3 className="text-2xl font-black text-stone-900 flex items-center gap-2">
-                  <User className="w-6 h-6 text-amber-700" />
-                  Ingreso
-                </h3>
-                <p className="text-stone-600 text-sm mt-1">Solo necesitas tu cédula y contraseña.</p>
-              </div>
+        {/* Contenedor central de autenticación */}
+        <div className="relative z-10 flex-1 flex items-center justify-center py-6">
+          <div className="w-full max-w-[440px]">
+            <div className="mb-5">
+              <h2 className="font-serif text-3xl sm:text-[2.35rem] font-bold text-[#1C0D02] leading-tight tracking-tight">
+                {authMode === 'login'
+                  ? 'Ingresar al sistema'
+                  : authMode === 'register'
+                  ? 'Crear cuenta'
+                  : 'Recuperar contraseña'}
+              </h2>
+              <p className="text-xs sm:text-sm text-[#5C4A38] mt-1.5">
+                {authMode === 'login'
+                  ? 'Accede con tu cédula y contraseña, o regístrate si aún no tienes cuenta.'
+                  : authMode === 'register'
+                  ? 'Completa los datos básicos para crear tu cuenta.'
+                  : 'Restablece tu clave de acceso usando tu cédula y celular.'}
+              </p>
+            </div>
 
-              {loginError && (
-                <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 text-sm font-bold">
-                  {loginError}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <label className="block text-stone-800 font-extrabold text-base">
-                  Cédula
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-amber-700">
-                    <User className="w-6 h-6" />
-                  </div>
-                  <input
-                    type="text"
-                    value={loginCedula}
-                    onChange={(e) => setLoginCedula(e.target.value)}
-                    placeholder="Ej: 1098765432"
-                    className="w-full pl-13 pr-4 py-3.5 rounded-2xl border-2 border-stone-300 focus:border-amber-700 focus:ring-4 focus:ring-amber-200 text-lg font-bold text-stone-900 bg-stone-50"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-stone-800 font-extrabold text-base">
-                  Contraseña
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-amber-700">
-                    <Lock className="w-6 h-6" />
-                  </div>
-                  <input
-                    type={showLoginPassword ? 'text' : 'password'}
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-13 pr-14 py-3.5 rounded-2xl border-2 border-stone-300 focus:border-amber-700 focus:ring-4 focus:ring-amber-200 text-lg font-bold text-stone-900 bg-stone-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-stone-600 hover:text-amber-800 font-bold text-sm"
-                  >
-                    {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
+            {/* Pestañas Ingresar / Registrarme */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setAuthMode('login')}
+                className={`py-2.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer border whitespace-nowrap ${
+                  authMode === 'login'
+                    ? 'bg-[#D3845E] hover:bg-[#C3744F] text-white border-[#D3845E] shadow-xs'
+                    : 'bg-white text-[#3E2D23] border-[#E2D8CA] hover:bg-[#FDFBF7]'
+                }`}
+              >
+                <LogIn className="w-4 h-4 shrink-0" />
+                <span>Ingresar</span>
+              </button>
 
               <button
-                type="submit"
-                disabled={loginLoading}
-                className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-800 via-emerald-700 to-emerald-900 text-white font-black text-xl shadow-xl border-2 border-emerald-950 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                type="button"
+                onClick={() => setAuthMode('register')}
+                className={`py-2.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer border whitespace-nowrap ${
+                  authMode === 'register'
+                    ? 'bg-[#D3845E] hover:bg-[#C3744F] text-white border-[#D3845E] shadow-xs'
+                    : 'bg-white text-[#3E2D23] border-[#E2D8CA] hover:bg-[#FDFBF7]'
+                }`}
               >
-                <span>{loginLoading ? 'Ingresando...' : 'Entrar'}</span>
-                <ArrowRight className="w-7 h-7" />
+                <UserPlus className="w-4 h-4 shrink-0" />
+                <span>Registrarme</span>
               </button>
-            </form>
-          )}
+            </div>
 
-          {/* Formulario de registro de nuevo productor */}
-          {authMode === 'register' && (
-            <form onSubmit={handleRegisterSubmit} className="space-y-5">
-              <div className="border-b border-stone-200 pb-4">
-                <h3 className="text-2xl font-black text-stone-900 flex items-center gap-2">
-                  <UserCheck className="w-6 h-6 text-emerald-700" />
-                  Registro
-                </h3>
-                <p className="text-stone-600 text-sm mt-1">Completa los datos básicos para crear tu cuenta.</p>
-              </div>
+            {/* Tarjeta blanca del formulario */}
+            <div className="bg-white rounded-2xl border border-[#EAE2D6] p-6 sm:p-7 shadow-[0_14px_34px_-14px_rgba(28,13,2,0.1)]">
+              {authMode === 'login' && (
+                <form onSubmit={handleLoginSubmit} className="space-y-4">
+                  <div className="pb-3 border-b border-[#EAE2D6]">
+                    <h3 className="text-lg font-bold text-[#1C0D02] flex items-center gap-2 leading-snug">
+                      <User className="w-5 h-5 text-[#5C4A38] shrink-0" />
+                      <span>Ingreso</span>
+                    </h3>
+                    <p className="text-[#6B5744] text-xs mt-1 leading-normal">
+                      Solo necesitas tu cédula y contraseña.
+                    </p>
+                  </div>
 
-              {regError && (
-                <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 text-sm font-bold">
-                  {regError}
-                </div>
+                  {loginError && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                      {loginError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label htmlFor="login-cedula" className="block text-sm font-bold text-[#2C1A11] mb-1.5">
+                      Cédula
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#7A6654]">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="login-cedula"
+                        type="text"
+                        value={loginCedula}
+                        onChange={(e) => setLoginCedula(e.target.value)}
+                        placeholder="Ej: 1098765432"
+                        className={`${loginInputClass} pl-10 pr-4`}
+                        disabled={loginLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="login-password" className="block text-sm font-bold text-[#2C1A11] mb-1.5">
+                      Contraseña
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#7A6654]">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="login-password"
+                        type={showLoginPassword ? 'text' : 'password'}
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        placeholder="••••••••••"
+                        className={`${loginInputClass} pl-10 pr-11`}
+                        disabled={loginLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword(!showLoginPassword)}
+                        aria-label={showLoginPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-[#6B5744] hover:text-[#1C0D02] cursor-pointer"
+                      >
+                        {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <div className="mt-1.5 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setAuthMode('recover')}
+                        className="text-xs font-medium text-[#A34818] hover:text-[#B84A00] hover:underline cursor-pointer"
+                      >
+                        ¿Olvidó su contraseña?
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loginLoading}
+                    className="w-full py-3 px-5 rounded-xl bg-[#5B8E76] hover:bg-[#4B7B65] disabled:opacity-60 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <span>{loginLoading ? 'Verificando...' : 'Entrar'}</span>
+                    {!loginLoading && <ArrowRight className="w-4 h-4" />}
+                  </button>
+                </form>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-stone-800 font-extrabold text-sm">Nombre completo</label>
-                  <input
-                    type="text"
-                    value={regNombre}
-                    onChange={(e) => setRegNombre(e.target.value)}
-                    placeholder="Ej: Carlos Alberto Restrepo"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
-                  />
-                </div>
+              {authMode === 'register' && (
+                <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+                  <div className="pb-3 border-b border-[#E6DDD0]/80">
+                    <h3 className="text-lg font-bold text-[#1C0D02] flex items-center gap-2 leading-snug">
+                      <UserCheck className="w-5 h-5 text-[#005F3C] shrink-0" />
+                      <span>Registro</span>
+                    </h3>
+                    <p className="text-[#6B5744] text-xs mt-1 leading-normal">
+                      Completa los datos básicos para crear tu cuenta.
+                    </p>
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="block text-stone-800 font-extrabold text-sm">Cédula</label>
-                  <input
-                    type="text"
-                    value={regCedula}
-                    onChange={(e) => setRegCedula(e.target.value)}
-                    placeholder="Ej: 91234567"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-stone-800 font-extrabold text-sm">Celular / WhatsApp</label>
-                  <input
-                    type="text"
-                    value={regCelular}
-                    onChange={(e) => setRegCelular(e.target.value)}
-                    placeholder="Ej: 311 234 5678"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-stone-800 font-extrabold text-sm">Correo electrónico</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-emerald-700">
-                      <Mail className="w-5 h-5" />
+                  {regError && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                      {regError}
                     </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="reg-nombre" className="block text-xs font-bold text-[#2C1A11] mb-1">
+                        Nombre completo
+                      </label>
+                      <input
+                        id="reg-nombre"
+                        type="text"
+                        value={regNombre}
+                        onChange={(e) => setRegNombre(e.target.value)}
+                        placeholder="Ej: Carlos Alberto Restrepo"
+                        className={`${registerInputClass} px-3.5`}
+                        disabled={regLoading}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="reg-cedula" className="block text-xs font-bold text-[#2C1A11] mb-1">
+                        Cédula
+                      </label>
+                      <input
+                        id="reg-cedula"
+                        type="text"
+                        value={regCedula}
+                        onChange={(e) => setRegCedula(e.target.value)}
+                        placeholder="Ej: 91234567"
+                        className={`${registerInputClass} px-3.5`}
+                        disabled={regLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="reg-celular" className="block text-xs font-bold text-[#2C1A11] mb-1">
+                        Celular / WhatsApp
+                      </label>
+                      <input
+                        id="reg-celular"
+                        type="text"
+                        value={regCelular}
+                        onChange={(e) => setRegCelular(e.target.value)}
+                        placeholder="Ej: 311 234 5678"
+                        className={`${registerInputClass} px-3.5`}
+                        disabled={regLoading}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="reg-finca" className="block text-xs font-bold text-[#2C1A11] mb-1">
+                        Nombre de la finca
+                      </label>
+                      <input
+                        id="reg-finca"
+                        type="text"
+                        value={regNombreFinca}
+                        onChange={(e) => setRegNombreFinca(e.target.value)}
+                        placeholder="Ej: Finca San José"
+                        className={`${registerInputClass} px-3.5`}
+                        disabled={regLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="reg-correo" className="block text-xs font-bold text-[#2C1A11] mb-1">
+                      Correo electrónico
+                    </label>
                     <input
+                      id="reg-correo"
                       type="email"
                       value={regCorreo}
                       onChange={(e) => setRegCorreo(e.target.value)}
-                      placeholder="Ej: nombre@correo.com"
-                      autoComplete="email"
-                      required
-                      className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
+                      placeholder="Ej: productor@correo.com"
+                      className={`${registerInputClass} px-3.5`}
+                      disabled={regLoading}
                     />
                   </div>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="block text-stone-800 font-extrabold text-sm">Nombre de la finca</label>
-                  <input
-                    type="text"
-                    value={regFincaVereda}
-                    onChange={(e) => setRegFincaVereda(e.target.value)}
-                    placeholder="Ej: Finca San José - Vereda La Palmita"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
-                  />
-                </div>
+                  <div>
+                    <label htmlFor="reg-password" className="block text-xs font-bold text-[#2C1A11] mb-1">
+                      Contraseña
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="reg-password"
+                        type={showRegPassword ? 'text' : 'password'}
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        placeholder="Mínimo 4 caracteres"
+                        className={`${registerInputClass} pl-3.5 pr-16`}
+                        disabled={regLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        aria-label={showRegPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs font-semibold text-[#2C1A11] hover:text-[#B84A00] cursor-pointer"
+                      >
+                        {showRegPassword ? 'Ocultar' : 'Ver'}
+                      </button>
+                    </div>
+                  </div>
 
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="block text-stone-800 font-extrabold text-sm">Contraseña</label>
-                  <div className="relative">
+                  <button
+                    type="submit"
+                    disabled={regLoading}
+                    className="w-full py-2.5 px-5 rounded-xl bg-[#B84A00] hover:bg-[#D95B00] disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <span>{regLoading ? 'Creando cuenta...' : 'Crear cuenta'}</span>
+                    {!regLoading && <ArrowRight className="w-4 h-4" />}
+                  </button>
+                </form>
+              )}
+
+              {authMode === 'recover' && (
+                <form onSubmit={handleRecoverSubmit} className="space-y-3.5">
+                  <div className="pb-3 border-b border-[#E6DDD0]/80">
+                    <h3 className="text-lg font-bold text-[#1C0D02] flex items-center gap-2 leading-snug">
+                      <KeyRound className="w-5 h-5 text-[#B84A00] shrink-0" />
+                      <span>Olvidó contraseña</span>
+                    </h3>
+                    <p className="text-[#6B5744] text-xs mt-1 leading-normal">
+                      Verifica tu cédula y celular para asignar una nueva contraseña.
+                    </p>
+                  </div>
+
+                  {recMessage && (
+                    <div
+                      className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                        recMessage.type === 'ok'
+                          ? 'bg-emerald-50 border-emerald-300 text-[#005F3C]'
+                          : 'bg-rose-50 border-rose-200 text-rose-800'
+                      }`}
+                    >
+                      {recMessage.type === 'ok' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                      <span>{recMessage.text}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#2C1A11] mb-1">
+                      Cédula registrada
+                    </label>
                     <input
-                      type={showRegPassword ? 'text' : 'password'}
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="Mínimo 4 caracteres"
-                      className="w-full px-4 py-3 pr-14 rounded-xl border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 text-base font-bold text-stone-900 bg-stone-50"
+                      type="text"
+                      value={recCedula}
+                      onChange={(e) => setRecCedula(e.target.value)}
+                      placeholder="Ej: 1098765432"
+                      className={`${loginInputClass} px-3.5`}
+                      disabled={recLoading}
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#2C1A11] mb-1">
+                      Celular / WhatsApp
+                    </label>
+                    <input
+                      type="text"
+                      value={recCelular}
+                      onChange={(e) => setRecCelular(e.target.value)}
+                      placeholder="Ej: 310 555 4321"
+                      className={`${loginInputClass} px-3.5`}
+                      disabled={recLoading}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#2C1A11] mb-1">
+                      Nueva contraseña
+                    </label>
+                    <input
+                      type="password"
+                      value={recNewPassword}
+                      onChange={(e) => setRecNewPassword(e.target.value)}
+                      placeholder="Mínimo 4 caracteres"
+                      className={`${loginInputClass} px-3.5`}
+                      disabled={recLoading}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => setShowRegPassword(!showRegPassword)}
-                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-stone-600 font-bold text-xs"
+                      onClick={() => setAuthMode('login')}
+                      className="px-4 py-2.5 rounded-xl bg-[#FAF6F0] hover:bg-[#EFE6D8] border border-[#E6DDD0] text-[#2C1A11] font-bold text-xs cursor-pointer transition-colors"
                     >
-                      {showRegPassword ? 'Ocultar' : 'Ver'}
+                      Volver a Ingresar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={recLoading}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-[#5B8E76] hover:bg-[#4B7B65] disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-colors"
+                    >
+                      <span>{recLoading ? 'Verificando...' : 'Restablecer contraseña'}</span>
+                      {!recLoading && <ArrowRight className="w-4 h-4" />}
                     </button>
                   </div>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={regLoading}
-                className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-800 via-amber-700 to-amber-900 text-white font-black text-xl shadow-xl border-2 border-amber-950 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                <span>{regLoading ? 'Creando...' : 'Crear cuenta'}</span>
-                <ArrowRight className="w-6 h-6" />
-              </button>
-            </form>
-          )}
+                </form>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Panel lateral con recomendaciones básicas para el productor */}
-        <div className="lg:col-span-5 bg-white border-2 border-stone-200 rounded-3xl p-6 shadow-sm">
-          <h4 className="font-black text-xl text-stone-900 mb-3">Cómo usarlo</h4>
-          <ul className="space-y-3 text-sm text-stone-700">
-            <li className="flex items-start gap-3">
-              <Sprout className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-              <span>Ingresa si ya tienes cuenta o regístrate si eres nuevo.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Phone className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-              <span>Usa un celular activo para recibir alertas o contacto.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-              <span>Después de entrar verás solo lo necesario para operar la finca.</span>
-            </li>
-          </ul>
-        </div>
-      </div>
+        <div className="h-2 shrink-0" aria-hidden="true" />
+      </section>
     </div>
   );
 };
