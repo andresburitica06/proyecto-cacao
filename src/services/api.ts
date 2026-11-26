@@ -248,6 +248,21 @@ export async function registerWithApi(input: {
   });
 }
 
+/**
+ * Restablece la contraseña de un usuario verificando cédula y celular.
+ * No funciona para cuentas de administrador.
+ */
+export async function recoverPasswordApi(
+  cedula: string,
+  celular: string,
+  nuevaPassword: string
+): Promise<{ ok: boolean; message: string }> {
+  return requestJson<{ ok: boolean; message: string }>('/auth/recover', {
+    method: 'POST',
+    body: JSON.stringify({ cedula, celular, nuevaPassword })
+  });
+}
+
 // ============================================================================
 // Administración de usuarios
 // ============================================================================

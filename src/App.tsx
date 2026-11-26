@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { ActiveTab, Navbar } from './components/Navbar';
 import { VoiceAssistantBar } from './components/VoiceAssistantBar';
 import { AuthView } from './components/AuthView';
@@ -21,9 +22,27 @@ import {
   createVenta, createZona, deleteFinca, deleteZona, fetchAdminClients, fetchFincas,
   fetchInventario, fetchMovimientosCaja, fetchRecolecciones, fetchVentas, fetchZonas,
   fetchClientesCompradores, resetUserPassword, updateFinca, updateInventario,
-  updateRecoleccion
+  updateRecoleccion, recoverPasswordApi
 } from './services/api';
 import type { ApiUserProfile } from './services/api';
+
+// Imágenes de fondo por módulo (Mockup)
+import bgInicioImg from './assets/images/bg_inicio_cacao_1795612273947.jpg';
+import bgFincasImg from './assets/images/bg_fincas_paisaje_1795612274632.jpg';
+import bgCosechaImg from './assets/images/bg_cosecha_secado_1795612274971.jpg';
+import bgHistorialesImg from './assets/images/bg_historiales_trabajo_1795612275384.jpg';
+import bgVentasImg from './assets/images/bg_ventas_mula_1795612276046.jpg';
+
+const MODULE_BACKGROUNDS: Record<string, { src: string; alt: string }> = {
+  dashboard:     { src: bgInicioImg,      alt: 'Mazorcas de cacao' },
+  fincas:        { src: bgFincasImg,      alt: 'Paisaje finca cacaotera' },
+  recoleccion:   { src: bgCosechaImg,     alt: 'Cosecha de cacao' },
+  inventario:    { src: bgHistorialesImg, alt: 'Trabajo en finca' },
+  ventas_caja:   { src: bgVentasImg,      alt: 'Venta de cacao' },
+  clientes:      { src: bgInicioImg,      alt: 'Panel administrativo' },
+  configuracion: { src: bgInicioImg,      alt: 'Base de datos' },
+  perfil:        { src: bgInicioImg,      alt: 'Perfil de usuario' },
+};
 
 import { 
   Finca, 
@@ -871,39 +890,29 @@ export default function App() {
   // Renderizado Aislado e Independiente para Autenticación (Login / Registro)
   if (activeTab === 'auth' || !currentUser) {
     return (
-      <div className="min-h-screen bg-[#FDFBF7] text-stone-900 flex flex-col font-sans selection:bg-amber-300 selection:text-amber-950">
-        
-        {/* Lector de Voz Superior */}
-        <VoiceAssistantBar
-          currentScreenTitle={screenTitles.auth.title}
-          screenTextToRead={screenTitles.auth.speech}
-        />
-
-        {/* Header Sencillo Aislado para Login */}
-        <div className="bg-stone-950 text-amber-100 py-3 px-4 border-b-4 border-amber-800 text-center flex items-center justify-between max-w-7xl w-full mx-auto">
-          <div className="flex items-center gap-2 font-black font-serif text-lg text-amber-200">
-            <span>🍫</span>
-            <span>Sistema de Gestión de Cacao - ADSO</span>
-          </div>
-          <span className="bg-amber-800/80 text-amber-200 text-xs font-bold px-2.5 py-1 rounded-xl border border-amber-600 hidden sm:inline-block">
-            Acceso Rural Campesino
-          </span>
-        </div>
-
-        {/* Vista Completa Independiente de Login y Registro */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FAF6F0] text-[#2C1A11] flex flex-col font-sans selection:bg-amber-200 selection:text-[#1C0D02]">
+        <main className="flex-1 flex flex-col min-h-0">
           <AuthView
             currentUser={currentUser}
             onLoginSuccess={handleLoginSuccess}
             onRegisterSuccess={handleRegisterSuccess}
             onLogout={handleLogout}
+            screenTitle={screenTitles.auth.title}
+            screenTextToRead={screenTitles.auth.speech}
+            onRecoverPassword={async (cedula, celular, nuevaPassword) => {
+              try {
+                await recoverPasswordApi(cedula, celular, nuevaPassword);
+                return true;
+              } catch {
+                return false;
+              }
+            }}
           />
         </main>
 
-        <footer className="bg-stone-950 text-amber-200/80 border-t-4 border-amber-900 py-4 px-4 text-center text-xs font-medium">
-          Sistema de Gestión de Cacao ADSO © 2026 • Diseñado para Pequeños y Medianor Cacaoteros
+        <footer className="bg-[#2B1B12] text-[#E6D6C3] border-t-2 border-[#B84A00] py-3 px-4 text-center text-xs font-medium shrink-0">
+          Sistema de Gestión de Cacao ADSO © 2026 - Diseñado para Pequeños y Medianos Cacaoteros
         </footer>
-
       </div>
     );
   }
@@ -930,7 +939,17 @@ export default function App() {
       />
 
       {/* 3. Área Principal de Contenido del Módulo */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
+      <main className="flex-1 relative overflow-hidden bg-[#1C0D02]">
+        <img
+          src={MODULE_BACKGROUNDS[activeTab]?.src || bgInicioImg}
+          alt={MODULE_BACKGROUNDS[activeTab]?.alt || ''}
+          className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-b from-[#FAF6F0]/25 via-[#FAF6F0]/35 to-[#1C0D02]/45 backdrop-blur-[1.5px] pointer-events-none"
+        />
+        <div className="relative z-10 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
 
         {/* Perfil del usuario autenticado */}
         {activeTab === 'perfil' && (
@@ -1037,6 +1056,62 @@ export default function App() {
 
         {activeTab === 'configuracion' && isAdmin && <DatabaseSetupView />}
 
+        {/* Navegación Fluida Anterior / Siguiente entre módulos */}
+        {(() => {
+          const moduleOrder: { id: ActiveTab; label: string }[] = [
+            { id: 'dashboard', label: 'Inicio' },
+            { id: 'fincas', label: 'Fincas' },
+            { id: 'recoleccion', label: 'Cosecha' },
+            { id: 'inventario', label: 'Historial' },
+            { id: 'ventas_caja', label: 'Ventas y caja' },
+            ...(isAdmin
+              ? [
+                  { id: 'clientes' as ActiveTab, label: 'Clientes' },
+                  { id: 'configuracion' as ActiveTab, label: 'Base de datos' },
+                ]
+              : []),
+          ];
+          const currentIndex = moduleOrder.findIndex((m) => m.id === activeTab);
+          if (currentIndex === -1) return null;
+          const prevModule = currentIndex > 0 ? moduleOrder[currentIndex - 1] : null;
+          const nextModule = currentIndex < moduleOrder.length - 1 ? moduleOrder[currentIndex + 1] : null;
+          const goTo = (tab: ActiveTab) => {
+            setActiveTab(tab);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          };
+
+          return (
+            <div className="max-w-4xl mx-auto mt-6 bg-[#FAF6F0]/92 backdrop-blur-sm border border-[#E6DDD0] rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between gap-3">
+              {prevModule ? (
+                <button
+                  type="button"
+                  onClick={() => goTo(prevModule.id)}
+                  className="inline-flex items-center gap-2 bg-[#B84A00] hover:bg-[#9E3F00] text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Anterior: {prevModule.label}</span>
+                </button>
+              ) : (
+                <div />
+              )}
+
+              {nextModule ? (
+                <button
+                  type="button"
+                  onClick={() => goTo(nextModule.id)}
+                  className="inline-flex items-center gap-2 bg-[#005F3C] hover:bg-[#007A4D] text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <span>Siguiente: {nextModule.label}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <div />
+              )}
+            </div>
+          );
+        })()}
+
+        </div>
       </main>
 
       {/* 4. Footer Rústico Campesino */}
