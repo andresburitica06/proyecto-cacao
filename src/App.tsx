@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { ActiveTab, Navbar } from './components/Navbar';
 import { VoiceAssistantBar } from './components/VoiceAssistantBar';
 import { AuthView } from './components/AuthView';
@@ -1054,6 +1055,61 @@ export default function App() {
         )}
 
         {activeTab === 'configuracion' && isAdmin && <DatabaseSetupView />}
+
+        {/* Navegación Fluida Anterior / Siguiente entre módulos */}
+        {(() => {
+          const moduleOrder: { id: ActiveTab; label: string }[] = [
+            { id: 'dashboard', label: 'Inicio' },
+            { id: 'fincas', label: 'Fincas' },
+            { id: 'recoleccion', label: 'Cosecha' },
+            { id: 'inventario', label: 'Historial' },
+            { id: 'ventas_caja', label: 'Ventas y caja' },
+            ...(isAdmin
+              ? [
+                  { id: 'clientes' as ActiveTab, label: 'Clientes' },
+                  { id: 'configuracion' as ActiveTab, label: 'Base de datos' },
+                ]
+              : []),
+          ];
+          const currentIndex = moduleOrder.findIndex((m) => m.id === activeTab);
+          if (currentIndex === -1) return null;
+          const prevModule = currentIndex > 0 ? moduleOrder[currentIndex - 1] : null;
+          const nextModule = currentIndex < moduleOrder.length - 1 ? moduleOrder[currentIndex + 1] : null;
+          const goTo = (tab: ActiveTab) => {
+            setActiveTab(tab);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          };
+
+          return (
+            <div className="max-w-4xl mx-auto mt-6 bg-[#FAF6F0]/92 backdrop-blur-sm border border-[#E6DDD0] rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between gap-3">
+              {prevModule ? (
+                <button
+                  type="button"
+                  onClick={() => goTo(prevModule.id)}
+                  className="inline-flex items-center gap-2 bg-[#B84A00] hover:bg-[#9E3F00] text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Anterior: {prevModule.label}</span>
+                </button>
+              ) : (
+                <div />
+              )}
+
+              {nextModule ? (
+                <button
+                  type="button"
+                  onClick={() => goTo(nextModule.id)}
+                  className="inline-flex items-center gap-2 bg-[#005F3C] hover:bg-[#007A4D] text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <span>Siguiente: {nextModule.label}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <div />
+              )}
+            </div>
+          );
+        })()}
 
         </div>
       </main>
