@@ -155,7 +155,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
   }
 
   return (
-    <div className="sticky top-0 z-40 bg-amber-900 border-b-4 border-amber-700 text-amber-50 shadow-md">
+    <div className="sticky top-0 z-40 bg-[#2C1A11] border-b-2 border-[#B84A00] text-[#FAF6F0] shadow-md">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           
@@ -163,13 +163,13 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={handlePlayScreen}
-              className={`p-2 sm:px-4 sm:py-2.5 rounded-2xl font-bold flex items-center gap-2 transition-all shadow-md text-base sm:text-lg border-2 cursor-pointer ${
+              className={`p-2 sm:px-4 sm:py-2 rounded-xl font-bold flex items-center gap-2 transition-all shadow-sm text-sm sm:text-base border cursor-pointer ${
                 isSpeaking 
-                  ? 'bg-amber-400 text-amber-950 border-amber-300 animate-pulse ring-4 ring-amber-300/50' 
-                  : 'bg-amber-800 hover:bg-amber-700 text-amber-5 border-amber-600'
+                  ? 'bg-amber-200 text-[#1C0D02] border-amber-400 animate-pulse ring-2 ring-amber-400/70' 
+                  : 'bg-amber-400 hover:bg-amber-300 text-[#1C0D02] border-amber-300'
               }`}
             >
-              <Volume2 className={`w-6 h-6 ${isSpeaking ? 'text-amber-950 animate-bounce' : 'text-amber-200'}`} />
+              <Volume2 className="w-5 h-5 text-[#1C0D02]" />
               <span className="hidden xs:inline">Asistente de Voz:</span>
               <span className="underline decoration-2 underline-offset-2 font-extrabold">Escuchar Pantalla</span>
             </button>
@@ -190,7 +190,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
               type="button"
               onClick={handleChangeSpeed}
               title="Cambiar velocidad de lectura"
-              className="px-3 py-1.5 rounded-xl bg-amber-950 hover:bg-amber-800 text-amber-200 border border-amber-700 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-[#1C0D02] hover:bg-[#3A2216] text-amber-100 border border-[#5C3A24] text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <FastForward className="w-4 h-4 text-amber-400" />
               <span>{speed < 1.0 ? '🐢 Voz Lenta' : '⚡ Voz Normal'}</span>
@@ -216,8 +216,8 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
               title={isMuted ? 'Activar sonido del asistente' : 'Silenciar sonido del asistente'}
               className={`p-2 rounded-xl font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
                 isMuted
-                  ? 'bg-rose-900/90 text-rose-200 border-rose-600 hover:bg-rose-800'
-                  : 'bg-emerald-800 text-emerald-100 border-emerald-600 hover:bg-emerald-700'
+                  ? 'bg-rose-900/90 text-rose-100 border-rose-500 hover:bg-rose-800'
+                  : 'bg-[#005F3C] hover:bg-[#007A4D] text-white border-emerald-400/50'
               }`}
             >
               {isMuted ? (
@@ -237,7 +237,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-2 rounded-xl bg-amber-950/60 hover:bg-amber-950 text-amber-200 border border-amber-700 cursor-pointer"
+              className="p-2 rounded-xl bg-[#1C0D02] hover:bg-[#3A2216] text-amber-200 border border-[#5C3A24] cursor-pointer"
               title="Instrucciones para campesinos"
             >
               <Info className="w-5 h-5" />
@@ -248,7 +248,7 @@ export const VoiceAssistantBar: React.FC<VoiceAssistantBarProps> = ({
 
         {/* Panel desplegable con explicación sencilla del asistente de voz */}
         {isExpanded && (
-          <div className="mt-3 p-3 bg-amber-950/90 border-2 border-amber-600 rounded-2xl text-amber-100 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="mt-3 p-3 bg-[#1C0D02] border border-[#5C3A24] rounded-2xl text-amber-50 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
             <div className="flex items-start gap-2">
               <span className="text-2xl">💡</span>
               <div>
