@@ -190,19 +190,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Resumen rápido de inventario total y saldo de caja del día */}
-            <div className="flex items-center gap-3 bg-[#1C0D02] border border-[#5C3A24] p-2.5 rounded-2xl text-xs sm:text-sm">
-              <div className="px-3 py-1.5 rounded-xl bg-[#2C1A11] border border-[#5C3A24] text-center">
-                <p className="text-amber-300 text-[11px] font-bold uppercase">Inventario Total</p>
-                <p className="text-lg font-black text-amber-50">{totalKilosInventario} <span className="text-xs font-normal">Kg</span></p>
-              </div>
-              <div className="w-px h-8 bg-[#5C3A24]"></div>
-              <div className="px-3 py-1.5 rounded-xl bg-[#005F3C]/40 border border-[#005F3C] text-center">
-                <p className="text-emerald-300 text-[11px] font-bold uppercase">Caja del Día</p>
-                <p className="text-lg font-black text-emerald-200">{formatCOP(cajaSaldoDia)}</p>
-              </div>
-            </div>
-
           </div>
 
         </div>
